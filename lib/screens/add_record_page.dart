@@ -2,7 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../constants/app_colors.dart';
-import '../screens/main_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 1. นำเข้า Supabase
+import 'dart:convert';
 
 class AddRecordPage extends StatefulWidget {
   const AddRecordPage({super.key});
@@ -12,6 +13,9 @@ class AddRecordPage extends StatefulWidget {
 }
 
 class _AddRecordPageState extends State<AddRecordPage> {
+  // สร้าง instance ของ supabase ไว้เรียกใช้
+  final supabase = Supabase.instance.client;
+
   final TextEditingController _waterController = TextEditingController(text: "0");
   final TextEditingController _sleepController = TextEditingController(text: "0");
   final TextEditingController _detailController = TextEditingController();
@@ -34,10 +38,58 @@ class _AddRecordPageState extends State<AddRecordPage> {
     super.dispose();
   }
 
+  // ฟังก์ชันแปลงชื่อเดือนเป็นตัวเลข (เช่น Sep -> 09) เพื่อให้ SQL อ่านได้
+  String _getMonthNumber(String monthName) {
+    int index = _months.indexOf(monthName) + 1;
+    return index.toString().padLeft(2, '0');
+  }
+
   int _getValue(TextEditingController controller) {
     if (controller.text.isEmpty) return 0;
     return int.tryParse(controller.text) ?? 0;
   }
+
+  // 2. ฟังก์ชันสำหรับบันทึกข้อมูลลง Supabase
+  Future<void> _saveRecord() async {
+  try {
+    // 1. ตรวจสอบข้อมูลเบื้องต้น (Optional)
+    String monthNum = _getMonthNumber(_month);
+    String dayNum = _day.toString().padLeft(2, '0');
+    String formattedDate = '$_year-$monthNum-$dayNum';
+
+    // 2. ส่งข้อมูลไป Supabase
+    await supabase.from('daily_records').insert({
+      'record_date': formattedDate,
+      'water_glasses': _getValue(_waterController),
+      'sleep_hours': _getValue(_sleepController),
+      'mood': _selectedMood,
+      'detail_note': _detailController.text,
+    });
+
+    // --- จุดสำคัญที่ทำให้หน้าดำ ---
+    // ตรวจสอบก่อนว่า Widget ยัง "มีตัวตน" อยู่ไหมก่อนสั่ง Navigator
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Saved Successfully! 🎉'),
+        backgroundColor: Color(0xFF2D7D9A),
+      ),
+    );
+
+    // ใช้คำสั่งนี้เพื่อกลับหน้าหลักอย่างปลอดภัย
+    Navigator.of(context).pop();
+
+  } catch (e) {
+    print("❌ Supabase Error: $e");
+    if (!mounted) return;
+    
+    // ถ้า Error ให้โชว์แจ้งเตือนแทนการปล่อยให้หน้าจอค้าง
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+    );
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -74,18 +126,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
   }
 
   // ====================================================================
-  // HELPER WIDGETS
-  // ====================================================================
-
-  Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
-    return ShaderMask(
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (bounds) => gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-      child: Text(text, style: style),
-    );
-  }
-
-  // ====================================================================
   // MAIN COMPONENTS
   // ====================================================================
 
@@ -115,6 +155,25 @@ class _AddRecordPageState extends State<AddRecordPage> {
     );
   }
 
+  Widget _buildActionButtons(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildGradientButton("Add", AppColors.stepsGradient, () {
+            _saveRecord(); // เรียกฟังก์ชันบันทึกข้อมูล
+          }),
+        ),
+        const SizedBox(width: 15),
+        Expanded(
+          child: _buildGradientButton("Cancel", AppColors.deleteGradient, () {
+            Navigator.pop(context);
+          }),
+        ),
+      ],
+    );
+  }
+
+  // --- ส่วนอื่นๆ เหมือนเดิม ---
   Widget _buildBigHeartIcon() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 25, top: 15),
@@ -160,24 +219,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildActionButtons(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildGradientButton("Add", AppColors.stepsGradient, () {
-            Navigator.pop(context);
-          }),
-        ),
-        const SizedBox(width: 15),
-        Expanded(
-          child: _buildGradientButton("Cancel", AppColors.deleteGradient, () {
-            Navigator.pop(context);
-          }),
-        ),
-      ],
     );
   }
 
@@ -376,5 +417,13 @@ class _AddRecordPageState extends State<AddRecordPage> {
 
   Widget _orb(double size, LinearGradient gradient) {
     return Opacity(opacity: 0.5, child: Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient), child: ClipOval(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 45, sigmaY: 45), child: Container(color: Colors.transparent)))));
+  }
+
+  Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
+    return ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) => gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
+      child: Text(text, style: style),
+    );
   }
 }

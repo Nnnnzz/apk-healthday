@@ -16,26 +16,27 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
+  // 1. ตัด AddRecordPage ออกจากลิสต์หน้าหลัก เพื่อไม่ให้ Scaffold ซ้อนกัน
   final List<Widget> _pages = [
-    const HomePage(),
-    const StatsPage(),
-    const AddRecordPage(), // Index 2
-    const CalendarPage(),
-    const SettingPage(),
+    const HomePage(),     // index 0
+    const StatsPage(),    // index 1
+    const CalendarPage(), // index 2 (ขยับขึ้นมา)
+    const SettingPage(),  // index 3 (ขยับขึ้นมา)
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true, 
+      extendBody: true,
       body: IndexedStack(
-        index: _currentIndex,
+        index: _currentIndex > 1 ? _currentIndex - 1 : _currentIndex, 
+        // Logic: ถ้า index เป็น 3 (calendar) จะให้โชว์ _pages[2]
         children: _pages,
       ),
       bottomNavigationBar: Container(
         height: 100,
         decoration: BoxDecoration(
-          color: AppColors.lightText, // ใช้สีขาวจากไฟล์สี
+          color: AppColors.lightText,
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(35),
             topRight: Radius.circular(35),
@@ -53,9 +54,9 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             _buildCustomNavItem('assets/icons/home_icon.png', 'home', 0),
             _buildCustomNavItem('assets/icons/stat_icon.png', 'stats', 1),
-            _buildAddButton(), 
-            _buildCustomNavItem('assets/icons/calendar_icon.png', 'calendar', 3),
-            _buildCustomNavItem('assets/icons/setting_icon.png', 'settings', 4),
+            _buildAddButton(), // ปุ่มตรงกลาง
+            _buildCustomNavItem('assets/icons/calendar_icon.png', 'calendar', 2), // แก้ index เป็น 2
+            _buildCustomNavItem('assets/icons/setting_icon.png', 'settings', 3), // แก้ index เป็น 3
           ],
         ),
       ),
@@ -63,11 +64,12 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildCustomNavItem(String iconPath, String label, int index) {
+    // ปรับเงื่อนไขเช็คการเลือกให้ตรงกับ index ใหม่
     bool isSelected = _currentIndex == index;
-    
-    // ดึงสีน้ำเงินเข้มจากตัวสุดท้ายของ primaryBlueGradient
+    if (index >= 2 && _currentIndex == index + 1) isSelected = true;
+    if (_currentIndex == 100) isSelected = false; // กันรวนตอนกด Add
+
     final Color selectedColor = AppColors.primaryBlueGradient.colors.last;
-    // ใช้สีเทาจาก greyText
     final Color unselectedColor = AppColors.greyText;
 
     return GestureDetector(
@@ -98,31 +100,23 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildAddButton() {
-    bool isSelected = _currentIndex == 2;
-    
-    // สีกรณีถูกเลือก: ใช้ Gradient น้ำเงินเข้ม
-    // สีกรณีปกติ: ใช้ Gradient ส้มหลัก
-    final Gradient currentGradient = isSelected 
-        ? AppColors.primaryBlueGradient 
-        : AppColors.primaryOrangeGradient;
-
-    // สีของเงา (Shadow)
-    final Color shadowColor = isSelected 
-        ? AppColors.primaryBlueGradient.colors.last 
-        : AppColors.primaryOrangeGradient.colors.first;
-
+    // ปุ่ม Add จะไม่เปลี่ยน Index แต่จะใช้วิธีเปิดหน้าใหม่ (Push)
     return GestureDetector(
-      onTap: () => setState(() => _currentIndex = 2),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const AddRecordPage()),
+        );
+      },
+      child: Container(
         width: 60,
         height: 60,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: currentGradient,
+          gradient: AppColors.primaryOrangeGradient,
           boxShadow: [
             BoxShadow(
-              color: shadowColor.withOpacity(0.3),
+              color: AppColors.primaryOrangeGradient.colors.first.withOpacity(0.3),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),

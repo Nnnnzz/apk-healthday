@@ -1,6 +1,6 @@
-//homepage
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 1. นำเข้า Supabase
 import '../constants/app_colors.dart';
 import '../widgets/background_wrapper.dart';
 import 'notification_page.dart';
@@ -15,8 +15,47 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // 2. สร้างตัวแปรเก็บข้อมูล
+  final supabase = Supabase.instance.client;
+  Map<String, dynamic>? userData;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData(); // 3. เรียกฟังก์ชันดึงข้อมูลเมื่อเปิดหน้า
+  }
+
+  // 4. ฟังก์ชันดึงข้อมูลจาก Supabase
+  Future<void> _fetchUserData() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        // ดึงข้อมูลจากตาราง users โดยใช้ ID ของคนที่ login อยู่
+        final data = await supabase
+            .from('users')
+            .select()
+            .eq('user_id', user.id)
+            .single();
+
+        setState(() {
+          userData = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching user data: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // แสดง Loading ระหว่างรอข้อมูล
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return BackgroundWrapper(
       child: SingleChildScrollView(
         child: Column(
@@ -28,102 +67,46 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    "Today's Goals",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontFamily: 'Poppins-Medium',
-                      color: AppColors.darkText,
-                    ),
-                  ),
+                  const Text("Today's Goals", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.darkText)),
                   const SizedBox(height: 15),
+                  // ส่วนนี้ยังใช้ Mock Data อยู่ (สามารถทำวิธีเดียวกันดึงจาก daily_records ได้)
                   Row(
                     children: [
                       _buildGoalCard(
                         iconPath: 'assets/icons/activity_icon.png',
-                        title: "1000", // ตัวอย่างจำนวนก้าวที่เดินได้
+                        title: "1000",
                         total: "/10000 Steps",
                         titleGradient: AppColors.stepsGradient,
-                        progress: 0.1, // ตัวอย่างความคืบหน้าที่เดินได้ (1000/10000 = 0.1)
+                        progress: 0.1,
                         progressGradient: AppColors.stepsGradient,
                       ),
                       const SizedBox(width: 15),
                       _buildGoalCard(
                         iconPath: 'assets/icons/water_icon.png',
-                        title: "5", // ตัวอย่างจำนวนแก้วน้ำที่ดื่มได้
+                        title: "5",
                         total: "/8 Glasses",
                         titleGradient: AppColors.waterGradient,
-                        progress: 0.625, // ตัวอย่างความคืบหน้าที่ดื่มน้ำได้ (5/8 = 0.625)
+                        progress: 0.625,
                         progressGradient: AppColors.waterGradient,
                       ),
                     ],
                   ),
                   const SizedBox(height: 15),
-                  const Text(
-                    "Body Status",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontFamily: 'Poppins-Medium',
-                      color: AppColors.darkText,
-                    ),
-                  ),
+                  const Text("Body Status", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.darkText)),
                   const SizedBox(height: 15),
                   Row(
                     children: [
-                      Expanded(
-                        child: _buildStatusCard(
-                          iconPath: 'assets/icons/sleep_icon.png',
-                          text: "Sleep: 8 hours", // ตัวอย่างข้อความ
-                          textColor: AppColors.sleepGradient.colors.last,
-                        ),
-                      ),
+                      Expanded(child: _buildStatusCard(iconPath: 'assets/icons/sleep_icon.png', text: "Sleep: 8 hours", textColor: AppColors.sleepGradient.colors.last)),
                       const SizedBox(width: 15),
-                      Expanded(
-                        child: _buildStatusCard(
-                          iconPath: 'assets/icons/mood_icon.png',
-                          text: "Mood: Happy", // ตัวอย่างข้อความ
-                          textColor: AppColors.moodGradient.colors.first,
-                        ),
-                      ),
+                      Expanded(child: _buildStatusCard(iconPath: 'assets/icons/mood_icon.png', text: "Mood: Happy", textColor: AppColors.moodGradient.colors.first)),
                     ],
                   ),
                   const SizedBox(height: 15),
-                  const Text(
-                    "Points",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontFamily: 'Poppins-Medium',
-                      color: AppColors.darkText,
-                    ),
-                  ),
+                  const Text("Points", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.darkText)),
                   const SizedBox(height: 15),
-                  _buildActionButton(
-                    iconPath: 'assets/icons/rewards_icon.png',
-                    title: "Redeem rewards",
-                    titleGradient: AppColors.primaryOrangeGradient,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const RewardsShopPage(),
-                        ),
-                      );
-                    },
-                  ),
+                  _buildActionButton(iconPath: 'assets/icons/rewards_icon.png', title: "Redeem rewards", titleGradient: AppColors.primaryOrangeGradient, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RewardsShopPage()))),
                   const SizedBox(height: 15),
-                  _buildActionButton(
-                    iconPath: 'assets/icons/point_icon.png',
-                    title: "Your points",
-                    titleGradient: AppColors.primaryOrangeGradient,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const PointPage(),
-                        ),
-                      );
-                    },
-                  ),
+                  _buildActionButton(iconPath: 'assets/icons/point_icon.png', title: "Your points", titleGradient: AppColors.primaryOrangeGradient, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PointPage()))),
                 ],
               ),
             ),
@@ -134,61 +117,37 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildProfileHeader3Layers(BuildContext context) {
+    // 5. นำข้อมูลมาใช้งานใน UI
+    final username = userData?['username'] ?? "Guest";
+    final fullName = "${userData?['first_name'] ?? 'Firstname'} ${userData?['last_name'] ?? 'Lastname'}";
+    final height = userData?['height_cm']?.toString() ?? "-";
+    final weight = userData?['weight_kg']?.toString() ?? "-";
+    final points = userData?['points']?.toString() ?? "0";
+
     return Container(
       width: double.infinity,
       height: 250,
       decoration: const BoxDecoration(
         gradient: AppColors.primaryOrangeGradient,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(10),
-          bottomRight: Radius.circular(10),
-        ),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(10),
-          bottomRight: Radius.circular(10),
-        ),
+        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
         child: Stack(
           children: [
-            Positioned(
-              top: -50,
-              left: -50,
-              child: _blobHelper(180, AppColors.moodGradient),
-            ),
-            Positioned(
-              bottom: 0,
-              left: -20,
-              child: _blobHelper(60, AppColors.moodGradient),
-            ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: _blobHelper(140, AppColors.moodGradient),
-            ),
-            Positioned(
-              bottom: 15,
-              right: 0,
-              child: _blobHelper(60, AppColors.moodGradient),
-            ),
+            // Blob Backgrounds...
+            _blobHelper(180, AppColors.moodGradient), // ตย. blob 
             Positioned.fill(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                 child: Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppColors.glassBorderColor,
-                      width: 1.0,
-                    ),
+                    border: Border.all(color: AppColors.glassBorderColor, width: 1.0),
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withOpacity(0.1),
-                        Colors.transparent,
-                        Colors.white.withOpacity(0.03),
-                      ],
+                      colors: [Colors.white.withOpacity(0.1), Colors.transparent, Colors.white.withOpacity(0.03)],
                       stops: const [0.0, 0.4, 1.0],
                     ),
                   ),
@@ -196,12 +155,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             Container(
-              padding: const EdgeInsets.only(
-                top: 60,
-                left: 25,
-                right: 25,
-                bottom: 30,
-              ),
+              padding: const EdgeInsets.only(top: 60, left: 25, right: 25, bottom: 30),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -209,39 +163,17 @@ class _HomePageState extends State<HomePage> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Container(
-                        width: 80,
-                        height: 32,
+                        width: 80, height: 32,
                         alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryBlueGradient,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            "0 Pts",
-                            style: TextStyle(
-                              color: AppColors.lightText,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
+                        decoration: BoxDecoration(gradient: AppColors.primaryBlueGradient, borderRadius: BorderRadius.circular(20)),
+                        child: FittedBox(
+                          child: Text("$points Pts", style: const TextStyle(color: AppColors.lightText, fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                       ),
                       const SizedBox(width: 15),
                       GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const NotificationPage(),
-                            ),
-                          );
-                        },
-                        child: Image.asset(
-                          'assets/icons/notifications_icon.png',
-                          width: 28,
-                        ),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationPage())),
+                        child: Image.asset('assets/icons/notifications_icon.png', width: 28),
                       ),
                     ],
                   ),
@@ -251,38 +183,17 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       const CircleAvatar(
                         radius: 40,
-                        backgroundImage: AssetImage(
-                          'assets/images/defaultprofile.png',
-                        ),
+                        backgroundImage: AssetImage('assets/images/defaultprofile.png'),
                       ),
                       const SizedBox(width: 15),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              "u6787000", // ตัวอย่างชื่อผู้ใช้
-                              style: TextStyle(
-                                color: AppColors.greyText,
-                                fontSize: 14,
-                              ),
-                            ),
-                            Text(
-                              "Firstname Lastname", // ตัวอย่างชื่อเต็มผู้ใช้
-                              style: TextStyle(
-                                color: AppColors.greyText,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              "Height : - cm   Weight : - kg", // ตัวอย่างข้อมูลส่วนสูงและน้ำหนัก
-                              style: TextStyle(
-                                color: AppColors.greyText,
-                                fontSize: 14,
-                              ),
-                            ),
+                          children: [
+                            Text(username, style: const TextStyle(color: AppColors.greyText, fontSize: 14)),
+                            Text(fullName, style: const TextStyle(color: AppColors.greyText, fontSize: 22, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text("Height : $height cm   Weight : $weight kg", style: const TextStyle(color: AppColors.greyText, fontSize: 14)),
                           ],
                         ),
                       ),

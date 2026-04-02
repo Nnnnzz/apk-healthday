@@ -10,6 +10,7 @@ dependencies:
   table_calendar: ^3.1.2
   flutter:
     sdk: flutter
+  supabase_flutter: ^2.12.2
 
 dev_dependencies:
   flutter_test:
@@ -21,11 +22,6 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
-    - assets/icons/activity_icon.png
-    - assets/icons/water_icon.png
-    - assets/icons/sleep_icon.png
-    - assets/icons/mood_icon.png
-    - assets/images/Full_logo.png
     
   fonts:
     - family: Poppins
