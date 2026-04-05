@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 1. นำเข้า Supabase
 import '../constants/app_colors.dart';
+import '../screens/main_screen.dart';
 
 class GoalsPage extends StatefulWidget {
   const GoalsPage({super.key});
@@ -10,13 +12,47 @@ class GoalsPage extends StatefulWidget {
 }
 
 class _GoalsPageState extends State<GoalsPage> {
+  final supabase = Supabase.instance.client; // สร้าง Instance Supabase
+  bool _isLoading = true; // โหลดข้อมูลตอนเปิดหน้า
+
   // ====================================================================
   // STATE VARIABLES (ตัวแปรเก็บค่าเป้าหมาย)
-  // สามารถดึงค่าเริ่มต้นจาก Database มาใส่ตรงนี้ได้ในอนาคต
   // ====================================================================
   int _stepsGoal = 8000;
   int _waterGoal = 8;
   int _sleepGoal = 8;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingGoals(); // ดึงข้อมูลตอนเปิดหน้า
+  }
+
+  // ฟังก์ชันดึงเป้าหมายเดิมจาก Database
+  Future<void> _loadExistingGoals() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final data = await supabase
+            .from('user_goals')
+            .select()
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (data != null && mounted) {
+          setState(() {
+            _stepsGoal = data['target_steps'] ?? 8000;
+            _waterGoal = data['target_water'] ?? 8;
+            _sleepGoal = data['target_sleep'] ?? 8;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading goals: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   // ====================================================================
   // LOGIC FUNCTIONS (ฟังก์ชันจัดการการบวก/ลบ)
@@ -42,24 +78,48 @@ class _GoalsPageState extends State<GoalsPage> {
     });
   }
 
-  void _saveGoals() {
-    // 💡 อนาคต: ใส่โค้ดบันทึกข้อมูลลง Database (เช่น Firebase, SQLite) ตรงนี้
-    print("--- Saved Goals ---");
-    print("Steps: $_stepsGoal");
-    print("Water: $_waterGoal");
-    print("Sleep: $_sleepGoal");
+  // ฟังก์ชันเซฟข้อมูลลง Supabase แล้วกลับไปรีเฟรชหน้า Home
+ // ฟังก์ชันเซฟข้อมูลลง Supabase แล้วกลับไปรีเฟรชหน้า Home
+  Future<void> _saveGoals() async {
+    // setState(() => _isLoading = true); // ถ้ามีตัวแปร _isLoading ให้เปิดคอมเมนต์นี้
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception("User not logged in");
 
-    // แสดงแจ้งเตือนว่า Save สำเร็จ
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Goals saved successfully! 🎉', style: TextStyle(fontFamily: 'Poppins-Medium')),
-        backgroundColor: Color(0xFF2D7D9A),
-        duration: Duration(seconds: 2),
-      ),
-    );
+      // ✅ 1. ใช้ upsert และต้องใส่ onConflict: 'user_id' เพื่อบังคับให้มัน "เขียนทับ" เป้าหมายเดิมของ user คนนี้
+      await supabase.from('user_goals').upsert({
+        'user_id': user.id,
+        'target_steps': _stepsGoal,
+        'target_water': _waterGoal,
+        'target_sleep': _sleepGoal,
+      }, onConflict: 'user_id'); // ⚠️ ตรงนี้สำคัญมาก ถ้าไม่ใส่ ข้อมูลอาจจะไม่ยอมอัปเดต
 
-    // กดย้อนกลับไปหน้าก่อนหน้า (Settings)
-    Navigator.pop(context);
+      if (!mounted) return;
+
+      // แสดงแจ้งเตือนว่า Save สำเร็จ
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Goals updated successfully! 🎯', style: TextStyle(fontFamily: 'Poppins-Medium')),
+          backgroundColor: Color(0xFF2D7D9A),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // ✅ 2. กดย้อนกลับไปหน้า MainScreen (เพื่อล้าง Stack และบังคับหน้า Home ดึงข้อมูลใหม่เอี่ยม)
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const MainScreen()),
+        (route) => false,
+      );
+
+    } catch (e) {
+      debugPrint("Error saving goals: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving goals: $e'), backgroundColor: Colors.red),
+      );
+      // setState(() => _isLoading = false); // ถ้ามีตัวแปร _isLoading ให้เปิดคอมเมนต์นี้
+    }
   }
 
   @override
@@ -73,7 +133,9 @@ class _GoalsPageState extends State<GoalsPage> {
 
           // 2. เนื้อหาหลัก
           SafeArea(
-            child: SingleChildScrollView(
+            child: _isLoading 
+              ? Center(child: CircularProgressIndicator(color: AppColors.primaryOrangeGradient.colors.first))
+              : SingleChildScrollView(
               padding: const EdgeInsets.only(bottom: 50),
               child: Column(
                 children: [
@@ -145,9 +207,9 @@ class _GoalsPageState extends State<GoalsPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // ปุ่ม Back พื้นหลังวงกลมสีส้ม
+          // ปุ่ม Back
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () => Navigator.pop(context), // หน้า Setting ให้กดย้อนกลับปกติ
             child: Container(
               padding: const EdgeInsets.only(left: 20, top: 10, bottom: 10, right: 10),
               child: const Row(
@@ -182,7 +244,7 @@ class _GoalsPageState extends State<GoalsPage> {
         style: TextStyle(
           color: AppColors.darkText, // สีน้ำเงินเข้ม
           fontSize: 18,
-          fontFamily: 'Poppins-SemiBold', // ใช้ฟอนต์หนาขึ้นเล็กน้อย
+          fontFamily: 'Poppins-SemiBold', 
           height: 1.4,
         ),
       ),
@@ -215,11 +277,11 @@ class _GoalsPageState extends State<GoalsPage> {
       ),
       child: Column(
         children: [
-          // แถบหัวข้อสีส้ม
+          // แถบหัวข้อ
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
             decoration: const BoxDecoration(
-              gradient: AppColors.primaryOrangeGradient, // สีขอบด้านบน
+              gradient: AppColors.primaryOrangeGradient, 
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(15),
                 topRight: Radius.circular(15),
@@ -349,7 +411,7 @@ class _GoalsPageState extends State<GoalsPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25),
       child: GestureDetector(
-        onTap: _saveGoals, // เรียกใช้ฟังก์ชันเซฟที่สร้างไว้ด้านบน
+        onTap: _saveGoals, // เรียกใช้ฟังก์ชันเซฟที่เขียนอัปเดตแล้ว
         child: Container(
           height: 55,
           width: double.infinity,
@@ -386,7 +448,6 @@ class _GoalsPageState extends State<GoalsPage> {
   Widget _buildBackgroundOrbs() {
     return Stack(
       children: [
-        // วงกลมสีส้มมุมซ้ายบน (รองรับปุ่ม Back)
         Positioned(
           top: -40,
           left: -60,
@@ -399,14 +460,8 @@ class _GoalsPageState extends State<GoalsPage> {
             ),
           ),
         ),
-        
-        // แสงฟุ้งสีฟ้ามุมขวาบน
         Positioned(top: 100, right: -80, child: _orb(250, AppColors.primaryBlueGradient)),
-        
-        // แสงฟุ้งสีฟ้ามุมซ้ายกลาง
         Positioned(top: 400, left: -100, child: _orb(250, AppColors.primaryBlueGradient)),
-        
-        // แสงฟุ้งสีส้มด้านล่าง
         Positioned(bottom: -100, right: -50, child: _orb(400, AppColors.primaryOrangeGradient)),
       ],
     );

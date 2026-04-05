@@ -1,7 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 1. นำเข้า Supabase
 import '../constants/app_colors.dart';
 import '../screens/main_screen.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'rewards_page.dart';
 
 class PointPage extends StatefulWidget {
@@ -12,26 +13,77 @@ class PointPage extends StatefulWidget {
 }
 
 class _PointPageState extends State<PointPage> {
-  final int redeemablePoints = 220;
+  final supabase = Supabase.instance.client;
 
-  // ===== ข้อมูลเดียวกับ CalendarPage =====
-  // TODO: เปลี่ยนเป็น shared data source / API call จริง
-  final Map<DateTime, List<Map<String, dynamic>>> _mockEvents = {
-    DateTime(2026, 3, 29): [
-      {'type': 'steps', 'label': 'Steps:',  'value': '1234', 'unit': '',      'points': 20},
-      {'type': 'water', 'label': 'Waters:', 'value': '5',    'unit': '',      'points': 5},
-      {'type': 'sleep', 'label': 'Sleeps:', 'value': '8',    'unit': 'hours', 'points': 7},
-      {'type': 'mood',  'label': 'Moods:',  'value': 'Happy','unit': '',      'points': 3},
-      {'type': 'note',  'value': "It's been a good day !"},
-    ],
-  };
+  // ====================================================================
+  // STATE VARIABLES
+  // ====================================================================
+  bool _isLoading = true;
+  int _totalPoints = 0;
+  List<Map<String, dynamic>> _todayEvents = [];
 
-  List<Map<String, dynamic>> _getTodayEvents() {
-    final today = DateTime.now();
-    for (var dateKey in _mockEvents.keys) {
-      if (isSameDay(dateKey, today)) return _mockEvents[dateKey]!;
+  @override
+  void initState() {
+    super.initState();
+    _fetchTodayPointsData();
+  }
+
+  // ฟังก์ชันดึงข้อมูลพอยต์และกิจกรรมของวันนี้
+  Future<void> _fetchTodayPointsData() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // หาวันที่ปัจจุบัน (YYYY-MM-DD)
+      final String todayDate = DateTime.now().toIso8601String().split('T')[0];
+
+      // ดึงข้อมูล 2 อย่างพร้อมกัน: แต้มรวมของ User และ กิจกรรมของวันนี้
+      final responses = await Future.wait([
+        supabase.from('users').select('points').eq('user_id', user.id).limit(1).maybeSingle(),
+        supabase.from('daily_records').select().eq('user_id', user.id).eq('record_date', todayDate).limit(1).maybeSingle(),
+      ]);
+
+      int fetchedTotalPoints = responses[0]?['points'] ?? 0;
+      final recordData = responses[1];
+      List<Map<String, dynamic>> newEvents = [];
+
+      if (recordData != null) {
+        int steps = recordData['steps'] ?? 0;
+        int water = recordData['water_glasses'] ?? 0;
+        int sleep = recordData['sleep_hours'] ?? 0;
+        String mood = recordData['mood'] ?? 'none';
+        String note = recordData['detail_note'] ?? '';
+
+        // จำลองการให้แต้ม (หรือจะดึงจาก Logic ของแอปคุณก็ได้)
+        if (steps > 0) {
+          newEvents.add({'type': 'steps', 'label': 'Steps:', 'value': '$steps', 'unit': 'steps', 'points': 20});
+        }
+        if (water > 0) {
+          newEvents.add({'type': 'water', 'label': 'Waters:', 'value': '$water', 'unit': 'glasses', 'points': 5});
+        }
+        if (sleep > 0) {
+          newEvents.add({'type': 'sleep', 'label': 'Sleeps:', 'value': '$sleep', 'unit': 'hours', 'points': 7});
+        }
+        if (mood != 'none') {
+          String displayMood = mood[0].toUpperCase() + mood.substring(1);
+          newEvents.add({'type': 'mood', 'label': 'Moods:', 'value': displayMood, 'unit': '', 'points': 3});
+        }
+        if (note.isNotEmpty) {
+          newEvents.add({'type': 'note', 'value': note});
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalPoints = fetchedTotalPoints;
+          _todayEvents = newEvents;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching points data: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
-    return [];
   }
 
   _StatTheme _getStatTheme(String type) {
@@ -49,12 +101,12 @@ class _PointPageState extends State<PointPage> {
     'Jul','Aug','Sep','Oct','Nov','Dec',
   ][month - 1];
 
-  // navigate กลับ MainScreen พร้อมเปลี่ยน tab
+  // navigate กลับ MainScreen
   void _navigateTo(int index) {
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (context) => MainScreen(),
+        builder: (context) => const MainScreen(),
       ),
       (route) => false,
     );
@@ -63,13 +115,15 @@ class _PointPageState extends State<PointPage> {
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
-    final todayEvents = _getTodayEvents();
-    final statEvents  = todayEvents.where((e) => e['type'] != 'note').toList();
-    final noteEvent   = todayEvents.where((e) => e['type'] == 'note').firstOrNull;
+    // แยกกิจกรรมที่เป็น Note ออกมา
+    final statEvents  = _todayEvents.where((e) => e['type'] != 'note').toList();
+    final noteEvent   = _todayEvents.where((e) => e['type'] == 'note').firstOrNull;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
-      body: Column(
+      body: _isLoading 
+        ? Center(child: CircularProgressIndicator(color: AppColors.primaryOrangeGradient.colors.first))
+        : Column(
         children: [
           // ===== Header =====
           Container(
@@ -117,12 +171,16 @@ class _PointPageState extends State<PointPage> {
 
                   // ===== Points Card =====
                   GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RewardsShopPage(userPoints: redeemablePoints),
-                      ),
-                    ),
+                    onTap: () async {
+                      // กดเข้าหน้ารางวัล รอจนกลับมาแล้วโหลดข้อมูลพอยต์ใหม่ (เผื่อโดนหักพอยต์)
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RewardsShopPage(userPoints: _totalPoints),
+                        ),
+                      );
+                      _fetchTodayPointsData();
+                    },
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                       child: Container(
@@ -183,7 +241,7 @@ class _PointPageState extends State<PointPage> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    '$redeemablePoints Points',
+                                    '$_totalPoints Pts',
                                     style: const TextStyle(
                                       fontSize: 36,
                                       fontWeight: FontWeight.bold,
@@ -277,7 +335,6 @@ class _PointPageState extends State<PointPage> {
           ),
         ],
       ),
-
     );
   }
 
@@ -298,19 +355,22 @@ class _PointPageState extends State<PointPage> {
                 Icon(Icons.broken_image, color: theme.color, size: 28),
           ),
           const SizedBox(width: 14),
-          Text(
-            item['label'],
-            style: TextStyle(
-              color: theme.color,
-              fontFamily: 'Poppins',
-              fontWeight: FontWeight.w500,
-              fontSize: 16,
+          // โชว์ข้อมูล เช่น Steps: 5000 steps
+          Expanded(
+            child: Text(
+              "${item['label']} ${item['value']} ${item['unit']}".trim(),
+              style: TextStyle(
+                color: theme.color,
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+              ),
             ),
           ),
           const SizedBox(width: 8),
           if (points != null)
             Text(
-              '+$points',
+              '+$points Pts',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,

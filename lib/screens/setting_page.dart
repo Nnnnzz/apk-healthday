@@ -1,11 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // นำเข้า Supabase
 import '../constants/app_colors.dart';
 import '../screens/main_screen.dart';
 import '../screens/personal_info_screen.dart';
 import '../screens/goal_page.dart';
-import '../widgets/background_wrapper.dart'; // อย่าลืมตรวจสอบ Path นี้นะครับ
+import '../screens/login_screen.dart'; // นำเข้าหน้า Login
+import '../widgets/background_wrapper.dart';
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
@@ -21,11 +23,9 @@ class _SettingPageState extends State<SettingPage> {
 
   @override
   Widget build(BuildContext context) {
-    // --- แก้ไข: เปลี่ยน Scaffold Body ให้เป็น BackgroundWrapper ---
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       body: BackgroundWrapper(
-        // ใช้ตัว Wrapper ครอบเพื่อให้มี Background Orbs เหมือนหน้าอื่นๆ
         child: SafeArea(
           child: Column(
             children: [
@@ -88,7 +88,38 @@ class _SettingPageState extends State<SettingPage> {
                       iconPath: 'assets/icons/logout_icon.png',
                       title: "Log Out",
                       isLogout: true,
-                      onTap: () {},
+                      onTap: () {
+                        // โชว์ Dialog ถามยืนยันก่อนออกจากระบบ
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Log Out', style: TextStyle(fontFamily: 'Poppins-Medium', fontWeight: FontWeight.bold)),
+                            content: const Text('Are you sure you want to log out?', style: TextStyle(fontFamily: 'Poppins')),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontFamily: 'Poppins-Medium')),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  // สั่ง Sign Out ออกจาก Supabase
+                                  await Supabase.instance.client.auth.signOut();
+                                  if (!context.mounted) return;
+                                  
+                                  // ล้าง Stack และพาไปหน้า Login
+                                  Navigator.pushAndRemoveUntil(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                                    (route) => false,
+                                  );
+                                },
+                                child: const Text('Log Out', style: TextStyle(color: Colors.red, fontFamily: 'Poppins-Medium', fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 100), // เผื่อระยะ Bottom Nav
                   ],
@@ -223,12 +254,12 @@ class _SettingPageState extends State<SettingPage> {
                 ),
               )
             : isLogout
-            ? null
-            : const Icon(
-                Icons.arrow_forward_ios,
-                size: 14,
-                color: Color(0xFF81E5E5),
-              ),
+                ? null
+                : const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 14,
+                    color: Color(0xFF81E5E5),
+                  ),
         onTap: isSwitch ? null : onTap,
       ),
     );

@@ -1,3 +1,4 @@
+import 'dart:ui'; // ต้อง import ตัวนี้สำหรับ ImageFilter (ทำเอฟเฟกต์กระจก)
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../widgets/background_wrapper.dart';
@@ -9,6 +10,7 @@ class RewardItem {
   final String description;
   final String descriptionTh;
   final Color titleColor;
+  final Color pointsColor; // เพิ่มสีของตัวหนังสือ Points
   final String? previewText;
   final Color? previewTextColor;
 
@@ -18,6 +20,7 @@ class RewardItem {
     required this.description,
     required this.descriptionTh,
     required this.titleColor,
+    required this.pointsColor,
     this.previewText,
     this.previewTextColor,
   });
@@ -35,31 +38,33 @@ class RewardsShopPage extends StatefulWidget {
 
 class _RewardsShopPageState extends State<RewardsShopPage> {
   int? _expandedIndex;
-  int? _pressedIndex; // ติดตาม index ที่กำลังกดอยู่
+  int? _pressedIndex;
 
+  // ปรับสีและข้อมูลให้ตรงกับในรูป
   final List<RewardItem> _rewards = const [
     RewardItem(
       title: 'AT 1 HOUR',
       points: 1000,
       description: 'you can redeem your AT by using 1000 pts.',
-      descriptionTh: 'สามารถแลกชั่วโมง AT ได้จาก 1000 pts และได้จำกัดแค่ 1 ครั้ง',
-      titleColor: Color(0xFF0F2A34),
+      descriptionTh: 'สามารถแลกชั่วโมง AT ได้จาก 1000 pts และได้จำกัดแค่ 1 ครั้ง.',
+      titleColor: Color(0xFF151B25), // สีดำเข้ม
+      pointsColor: Color(0xFF151B25), 
     ),
     RewardItem(
       title: 'AT 3 HOUR',
       points: 3000,
       description: 'you can redeem your AT by using 3000 pts.',
-      descriptionTh: 'สามารถแลกชั่วโมง AT ได้จาก 3000 pts และได้จำกัดแค่ 1 ครั้ง',
-      titleColor: Color(0xFF00C2A8),
+      descriptionTh: 'สามารถแลกชั่วโมง AT ได้จาก 3000 pts และได้จำกัดแค่ 1 ครั้ง.',
+      titleColor: Color(0xFF00C2A8), // สีเขียวมิ้นต์
+      pointsColor: Color(0xFF00C2A8),
     ),
     RewardItem(
       title: 'SPECIAL TITLES',
       points: 10000,
-      description:
-          'Unlock this special title to display under your name. Show everyone your dedication!',
-      descriptionTh:
-          'ปลดล็อคยศพิเศษได้ชื่อของคุณ ให้ทุกคนได้เห็นถึงความทุ่มเทของคุณ!',
-      titleColor: Color(0xFF0F2A34),
+      description: 'Unlock this special title to display under your name. Show everyone your dedication!',
+      descriptionTh: 'ปลดล็อคยศพิเศษได้ชื่อของคุณ ให้ทุกคนได้เห็นถึงความทุ่มเทของคุณ!',
+      titleColor: Color(0xFFFFA726), // สีส้มตามรูป
+      pointsColor: Color(0xFFFFA726),
       previewText: '( Legendary Healthy )',
       previewTextColor: Color(0xFFFFA726),
     ),
@@ -73,29 +78,17 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
 
   void _onPurchase(RewardItem reward) {
     if (widget.userPoints < reward.points) {
+      // โชว์แจ้งเตือนแต้มไม่พอ
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text(
-            'Not enough points',
-            style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.bold),
-          ),
-          content: Text(
-            'You need ${reward.points} pts to redeem "${reward.title}" but you only have ${widget.userPoints} pts.',
-            style: const TextStyle(fontFamily: 'Poppins', fontSize: 14),
-          ),
+          title: const Text('Not enough points', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.bold)),
+          content: Text('You need ${reward.points} pts to redeem "${reward.title}".\nYou only have ${widget.userPoints} pts.', style: const TextStyle(fontFamily: 'Poppins')),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'OK',
-                style: TextStyle(
-                  color: Color(0xFF00C2A8),
-                  fontFamily: 'Poppins',
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: const Text('OK', style: TextStyle(color: Color(0xFF00C2A8), fontFamily: 'Poppins', fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -103,60 +96,34 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
       return;
     }
 
+    // โชว์แจ้งเตือนยืนยันการซื้อ
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Redeem "${reward.title}"?',
-          style: const TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        content: Text(
-          'This will use ${reward.points} pts from your balance.',
-          style: const TextStyle(fontFamily: 'Poppins', fontSize: 14),
-        ),
+        title: Text('Redeem "${reward.title}"?', style: const TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.bold)),
+        content: Text('This will use ${reward.points} pts from your balance.', style: const TextStyle(fontFamily: 'Poppins')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Colors.grey, fontFamily: 'Poppins'),
-            ),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontFamily: 'Poppins')),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF00C2A8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () {
               Navigator.pop(context);
-              // TODO: API call / deduct points
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(
-                    '"${reward.title}" redeemed successfully!',
-                    style: const TextStyle(fontFamily: 'Poppins'),
-                  ),
+                  content: Text('"${reward.title}" redeemed successfully!', style: const TextStyle(fontFamily: 'Poppins')),
                   backgroundColor: const Color(0xFF00C2A8),
                   behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
                 ),
               );
             },
-            child: const Text(
-              'Confirm',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
+            child: const Text('Confirm', style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.bold, color: Colors.white)),
           ),
         ],
       ),
@@ -166,72 +133,67 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
   @override
   Widget build(BuildContext context) {
     return BackgroundWrapper(
-      child: Stack(
-        children: [
-          // ===== เนื้อหาหลัก =====
-          SafeArea(
-            child: Column(
-              children: [
-                // Title กลาง
-                const Padding(
-                  padding: EdgeInsets.only(top: 16, bottom: 8),
-                  child: Center(
-                    child: Text(
-                      'Rewards',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF5C5454),
-                        fontFamily: 'Poppins',
+      child: Scaffold(
+        backgroundColor: Colors.transparent, // ให้ทะลุเห็น BackgroundWrapper
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ===== Custom App Bar (Back & Rewards) =====
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.grey),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Back',
+                            style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontFamily: 'Poppins', fontWeight: FontWeight.w500),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ),
-
-                // ===== Reward Cards =====
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-                    itemCount: _rewards.length,
-                    itemBuilder: (context, index) {
-                      final reward = _rewards[index];
-                      final isExpanded = _expandedIndex == index;
-                      return _buildRewardCard(reward, index, isExpanded);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // ===== ปุ่ม Back =====
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 20, top: 10),
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    size: 20,
-                    color: AppColors.darkText,
-                  ),
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          'Rewards',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF8D7B7B), fontFamily: 'Poppins'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 60), // บาลานซ์ช่องว่างฝั่งขวา
+                  ],
                 ),
               ),
-            ),
+
+              const SizedBox(height: 10),
+
+              // ===== Reward Cards List =====
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                  itemCount: _rewards.length,
+                  itemBuilder: (context, index) {
+                    final reward = _rewards[index];
+                    final isExpanded = _expandedIndex == index;
+                    return _buildGlassRewardCard(reward, index, isExpanded);
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildRewardCard(RewardItem reward, int index, bool isExpanded) {
+  // สร้าง Widget แบบกระจกฝ้า (Glassmorphism)
+  Widget _buildGlassRewardCard(RewardItem reward, int index, bool isExpanded) {
     final isPressed = _pressedIndex == index;
+
     return GestureDetector(
       onTap: () => _onCardTap(index),
       onTapDown: (_) => setState(() => _pressedIndex = index),
@@ -241,155 +203,133 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
       },
       onTapCancel: () => setState(() => _pressedIndex = null),
       child: AnimatedScale(
-        scale: isPressed ? 0.96 : 1.0,
+        scale: isPressed ? 0.98 : 1.0,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          margin: const EdgeInsets.only(bottom: 16),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.9),
             borderRadius: BorderRadius.circular(16),
+            // เงาบางๆ นอกกล่องกระจก
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(isPressed ? 0.03 : 0.06),
-                blurRadius: isPressed ? 6 : 12,
-                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                spreadRadius: 2,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
-          child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // === Collapsed ===
-              if (!isExpanded)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      reward.title,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: reward.titleColor,
-                        fontFamily: 'Poppins',
-                      ),
-                    ),
-                    Text(
-                      '${reward.points} pts',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: reward.previewTextColor ?? const Color(0xFF00C2A8),
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15), // ความเบลอของกระจก
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.65), // ความใสของสีขาว
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.5), // ขอบเงาสะท้อนกระจก
                 ),
-
-              // === Expanded ===
-              if (isExpanded) ...[
-                Center(
-                  child: Text(
-                    reward.title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: reward.titleColor,
-                      fontFamily: 'Poppins',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('• ', style: TextStyle(fontSize: 14)),
-                    Expanded(
-                      child: RichText(
-                        text: TextSpan(
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontFamily: 'Poppins',
-                            color: Colors.black87,
-                          ),
-                          children: [
-                            TextSpan(
-                              text: reward.description,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 30),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // ===== Title =====
+                        Center(
+                          child: Text(
+                            reward.title,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 32, // ฟอนต์ใหญ่เหมือนในรูป
+                              fontWeight: FontWeight.w900, // หนาพิเศษ
+                              color: reward.titleColor,
+                              fontFamily: 'Poppins',
+                              letterSpacing: 0.5,
                             ),
-                            TextSpan(text: '\n(${reward.descriptionTh})'),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                        
+                        // ===== ถ้ากดขยาย (Expanded) จะโชว์ส่วนนี้ =====
+                        if (isExpanded) ...[
+                          const SizedBox(height: 25),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('• ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              Expanded(
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: const TextStyle(fontSize: 13, fontFamily: 'Poppins', color: Colors.black87, height: 1.5),
+                                    children: [
+                                      TextSpan(text: '${reward.description}\n', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      TextSpan(text: '( ${reward.descriptionTh} )'),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 30),
+                        ],
 
-                if (reward.previewText != null) ...[
-                  Center(
-                    child: Text(
-                      reward.previewText!,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        fontStyle: FontStyle.italic,
-                        color: reward.previewTextColor,
-                        fontFamily: 'Poppins',
-                      ),
+                        // ===== ถ้าไม่ได้ขยาย (Collapsed) จะมีระยะห่างให้ Points ลงไปอยู่ล่างๆ =====
+                        if (!isExpanded) const SizedBox(height: 10),
+
+                        // ===== Points =====
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '${reward.points} pts',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: reward.pointsColor,
+                              fontFamily: 'Poppins',
+                            ),
+                          ),
+                        ),
+
+                        // ===== ปุ่ม Purchase (จะโชว์ตอนขยาย) =====
+                        if (isExpanded) ...[
+                          const SizedBox(height: 15),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: () => _onPurchase(reward),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF00C2A8),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Purchase',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  fontFamily: 'Poppins',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                ],
-
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    '${reward.points} pts',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black54,
-                      fontFamily: 'Poppins',
-                    ),
-                  ),
                 ),
-                const SizedBox(height: 12),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () => _onPurchase(reward),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00C2A8),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      'Purchase',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        fontFamily: 'Poppins',
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+              ),
+            ),
           ),
-        ),
         ),
       ),
     );

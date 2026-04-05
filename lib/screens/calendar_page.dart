@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_colors.dart';
 import '../screens/main_screen.dart';
 
@@ -12,31 +13,89 @@ class CalendarPage extends StatefulWidget {
 }
 
 class _CalendarPageState extends State<CalendarPage> {
+  final supabase = Supabase.instance.client;
+
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   
-  // ข้อมูลจำลอง: เพิ่ม key 'isGoalMet' เพื่อเช็คว่ากิจกรรมนั้นถึงเป้าหรือยัง
-  final Map<DateTime, List<Map<String, dynamic>>> _mockEvents = {
-    DateTime(2026, 3, 29): [
-      {'type': 'steps', 'label': 'Steps:', 'value': '1234', 'unit': '', 'isGoalMet': true}, // ยังไม่ถึงเป้า
-      {'type': 'water', 'label': 'Waters:', 'value': '5', 'unit': '', 'isGoalMet': true},   // ถึงเป้าแล้ว
-      {'type': 'sleep', 'label': 'Sleeps:', 'value': '8', 'unit': 'hours', 'isGoalMet': true}, // ถึงเป้าแล้ว
-      {'type': 'mood', 'label': 'Moods:', 'value': 'Happy', 'unit': '', 'isGoalMet': true},  // อารมณ์ดี
-      {'type': 'note', 'value': 'It\'s been a good day !'},
-    ],
-  };
+  bool _isLoading = false;
+  Map<String, dynamic>? _userGoals;
+  List<Map<String, dynamic>> _currentDayEvents = [];
 
   @override
   void initState() {
     super.initState();
     _selectedDay = _focusedDay;
+    _fetchDataForDay(_focusedDay);
   }
 
-  List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
-    for (var dateKey in _mockEvents.keys) {
-      if (isSameDay(dateKey, day)) return _mockEvents[dateKey]!;
+  Future<void> _fetchDataForDay(DateTime day) async {
+    setState(() => _isLoading = true);
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      if (_userGoals == null) {
+        final goalData = await supabase.from('user_goals').select().eq('user_id', user.id).maybeSingle();
+        _userGoals = goalData ?? {'target_steps': 8000, 'target_water': 8, 'target_sleep': 8};
+      }
+
+      final String formattedDate = "${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}";
+
+      final record = await supabase
+          .from('daily_records')
+          .select()
+          .eq('user_id', user.id)
+          .eq('record_date', formattedDate)
+          .maybeSingle();
+
+      List<Map<String, dynamic>> newEvents = [];
+
+      if (record != null) {
+        int steps = record['steps'] ?? 0;
+        int water = record['water_glasses'] ?? 0;
+        int sleep = record['sleep_hours'] ?? 0;
+        String mood = record['mood'] ?? 'none';
+        String note = record['detail_note'] ?? '';
+
+        int targetSteps = _userGoals?['target_steps'] ?? 8000;
+        int targetWater = _userGoals?['target_water'] ?? 8;
+        int targetSleep = _userGoals?['target_sleep'] ?? 8;
+
+        newEvents.add({
+          'type': 'steps', 'label': 'Steps:', 'value': '$steps', 'unit': '', 
+          'isGoalMet': steps >= targetSteps && steps > 0
+        });
+        newEvents.add({
+          'type': 'water', 'label': 'Waters:', 'value': '$water', 'unit': '', 
+          'isGoalMet': water >= targetWater && water > 0
+        });
+        newEvents.add({
+          'type': 'sleep', 'label': 'Sleeps:', 'value': '$sleep', 'unit': 'hours', 
+          'isGoalMet': sleep >= targetSleep && sleep > 0
+        });
+        
+        String displayMood = mood == 'none' ? 'None' : mood[0].toUpperCase() + mood.substring(1);
+        newEvents.add({
+          'type': 'mood', 'label': 'Moods:', 'value': displayMood, 'unit': '', 
+          'isGoalMet': mood != 'none' 
+        });
+
+        if (note.isNotEmpty) {
+          newEvents.add({'type': 'note', 'value': note});
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _currentDayEvents = newEvents;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching calendar data: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
-    return [];
   }
 
   @override
@@ -47,24 +106,30 @@ class _CalendarPageState extends State<CalendarPage> {
         children: [
           _buildBackgroundOrbs(),
           SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                _buildHeader(context),
-                const SizedBox(height: 20),
-                _buildQuote(),
-                const SizedBox(height: 20),
-                _buildCalendarCard(),
-                const SizedBox(height: 20),
-                Expanded(child: _buildDailyRecordsContainer()),
-              ],
+            // ✅ ครอบทั้งหน้าด้วย SingleChildScrollView เพื่อให้เลื่อนได้ทั้งหมด
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  _buildHeader(context),
+                  const SizedBox(height: 20),
+                  _buildQuote(),
+                  const SizedBox(height: 20),
+                  _buildCalendarCard(),
+                  const SizedBox(height: 20),
+                  // ✅ เอา Expanded ออก เพราะไม่จำเป็นต้องบังคับยืดสุดจอแล้ว
+                  _buildDailyRecordsContainer(),
+                  const SizedBox(height: 40), // เผื่อระยะด้านล่างให้เลื่อนได้สุดไม่บังปุ่ม Navbar
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
-  // HELPER WIDGETS
+
   Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
     return ShaderMask(
       blendMode: BlendMode.srcIn,
@@ -72,7 +137,7 @@ class _CalendarPageState extends State<CalendarPage> {
       child: Text(text, style: style),
     );
   }
-  // MAIN COMPONENTS
+
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -122,10 +187,13 @@ class _CalendarPageState extends State<CalendarPage> {
         focusedDay: _focusedDay,
         selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
         onDaySelected: (selectedDay, focusedDay) {
-          setState(() {
-            _selectedDay = selectedDay;
-            _focusedDay = focusedDay;
-          });
+          if (!isSameDay(_selectedDay, selectedDay)) {
+            setState(() {
+              _selectedDay = selectedDay;
+              _focusedDay = focusedDay;
+            });
+            _fetchDataForDay(selectedDay);
+          }
         },
         headerStyle: const HeaderStyle(
           formatButtonVisible: false,
@@ -143,9 +211,8 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Widget _buildDailyRecordsContainer() {
-    final events = _getEventsForDay(_selectedDay ?? _focusedDay);
     return Container(
-      margin: const EdgeInsets.fromLTRB(25, 0, 25, 20),
+      margin: const EdgeInsets.symmetric(horizontal: 25),
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
@@ -172,10 +239,14 @@ class _CalendarPageState extends State<CalendarPage> {
                       "${_selectedDay?.day} ${_getMonthName(_selectedDay?.month ?? 1)} ${_selectedDay?.year}",
                       style: const TextStyle(fontSize: 18, fontFamily: 'Poppins-Medium', color: Color(0xFF2D7D9A)),
                     ),
-                    const Divider(height: 30, color: Colors.black12),
-                    Expanded(
-                      child: events.isEmpty ? _buildEmptyState() : _buildEventList(events),
-                    ),
+                    const Divider(height: 25, color: Colors.black12),
+                    // ✅ เอา Expanded ออก และโชว์ข้อมูลได้เลย (มันจะดันกล่องให้ยาวลงไปเอง)
+                    _isLoading 
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 30),
+                          child: Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A))),
+                        )
+                      : (_currentDayEvents.isEmpty ? _buildEmptyState() : _buildEventList(_currentDayEvents)),
                   ],
                 ),
               ),
@@ -187,18 +258,17 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Widget _buildEventList(List<Map<String, dynamic>> events) {
-    return ListView.builder(
-      itemCount: events.length,
-      itemBuilder: (context, index) {
-        final item = events[index];
+    // ✅ เปลี่ยนจาก ListView.builder มาเป็น Column เพิ่อให้ไม่เกิดปัญหาเลื่อนจอซ้อนกัน
+    return Column(
+      children: events.map((item) {
         return item['type'] == 'note' ? _buildNoteCard(item['value']) : _buildStatRow(item);
-      },
+      }).toList(),
     );
   }
 
   Widget _buildStatRow(Map<String, dynamic> item) {
     final theme = _getStatTheme(item['type']);
-    final bool isMet = item['isGoalMet'] ?? false; // เช็คว่าผ่านเป้าหมายไหม
+    final bool isMet = item['isGoalMet'] ?? false; 
     
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -219,8 +289,6 @@ class _CalendarPageState extends State<CalendarPage> {
             "${item['value']} ${item['unit']}",
             style: const TextStyle(fontSize: 16, color: Colors.black87, fontFamily: 'Poppins-Medium'),
           ),
-          
-          // --- เพิ่มติ๊กถูกด้านหลัง ---
           if (isMet) ...[
             const Spacer(),
             Container(
@@ -228,7 +296,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0x4001D8C1), // แสงฟุ้งสีเขียวมิ้นต์
+                    color: Color(0x4001D8C1), 
                     blurRadius: 6,
                     offset: Offset(0, 1),
                   )
@@ -236,7 +304,7 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
               child: const Icon(
                 Icons.check_circle_rounded,
-                color: Color(0xFF01D8C1), // สีเขียวมิ้นต์ (Steps Gradient)
+                color: Color(0xFF01D8C1),
                 size: 20,
               ),
             ),
@@ -248,6 +316,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _buildNoteCard(String note) {
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
@@ -260,19 +329,21 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Widget _buildEmptyState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.event_note_outlined, color: Colors.grey, size: 50),
-          SizedBox(height: 10),
-          Text("No records for this day", style: TextStyle(color: AppColors.greyText, fontFamily: 'Poppins-Medium')),
-        ],
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.event_note_outlined, color: Colors.grey, size: 50),
+            SizedBox(height: 10),
+            Text("No records for this day", style: TextStyle(color: AppColors.greyText, fontFamily: 'Poppins-Medium')),
+          ],
+        ),
       ),
     );
   }
 
-  // --- Background ---
   Widget _buildBackgroundOrbs() {
     return Stack(
       children: [

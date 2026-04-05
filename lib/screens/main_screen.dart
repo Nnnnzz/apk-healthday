@@ -16,12 +16,12 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  // 1. ตัด AddRecordPage ออกจากลิสต์หน้าหลัก เพื่อไม่ให้ Scaffold ซ้อนกัน
+  // มี 4 หน้าตรงๆ ตาม Index 0, 1, 2, 3
   final List<Widget> _pages = [
     const HomePage(),     // index 0
     const StatsPage(),    // index 1
-    const CalendarPage(), // index 2 (ขยับขึ้นมา)
-    const SettingPage(),  // index 3 (ขยับขึ้นมา)
+    const CalendarPage(), // index 2
+    const SettingPage(),  // index 3
   ];
 
   @override
@@ -29,8 +29,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       extendBody: true,
       body: IndexedStack(
-        index: _currentIndex > 1 ? _currentIndex - 1 : _currentIndex, 
-        // Logic: ถ้า index เป็น 3 (calendar) จะให้โชว์ _pages[2]
+        index: _currentIndex, // ✅ แก้ไข: ใช้ค่า Index ตรงๆ ไปเลย ไม่ต้องลบเลขแล้ว
         children: _pages,
       ),
       bottomNavigationBar: Container(
@@ -54,9 +53,9 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             _buildCustomNavItem('assets/icons/home_icon.png', 'home', 0),
             _buildCustomNavItem('assets/icons/stat_icon.png', 'stats', 1),
-            _buildAddButton(), // ปุ่มตรงกลาง
-            _buildCustomNavItem('assets/icons/calendar_icon.png', 'calendar', 2), // แก้ index เป็น 2
-            _buildCustomNavItem('assets/icons/setting_icon.png', 'settings', 3), // แก้ index เป็น 3
+            _buildAddButton(), 
+            _buildCustomNavItem('assets/icons/calendar_icon.png', 'calendar', 2),
+            _buildCustomNavItem('assets/icons/setting_icon.png', 'settings', 3),
           ],
         ),
       ),
@@ -64,10 +63,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildCustomNavItem(String iconPath, String label, int index) {
-    // ปรับเงื่อนไขเช็คการเลือกให้ตรงกับ index ใหม่
+    // ✅ แก้ไข: เช็คการเลือกแบบตรงไปตรงมา
     bool isSelected = _currentIndex == index;
-    if (index >= 2 && _currentIndex == index + 1) isSelected = true;
-    if (_currentIndex == 100) isSelected = false; // กันรวนตอนกด Add
 
     final Color selectedColor = AppColors.primaryBlueGradient.colors.last;
     final Color unselectedColor = AppColors.greyText;
@@ -100,7 +97,6 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildAddButton() {
-    // ปุ่ม Add จะไม่เปลี่ยน Index แต่จะใช้วิธีเปิดหน้าใหม่ (Push)
     return GestureDetector(
       onTap: () {
         Navigator.push(

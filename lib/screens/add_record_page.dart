@@ -2,8 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../constants/app_colors.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // 1. นำเข้า Supabase
-import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'main_screen.dart';
 
 class AddRecordPage extends StatefulWidget {
   const AddRecordPage({super.key});
@@ -13,22 +13,62 @@ class AddRecordPage extends StatefulWidget {
 }
 
 class _AddRecordPageState extends State<AddRecordPage> {
-  // สร้าง instance ของ supabase ไว้เรียกใช้
   final supabase = Supabase.instance.client;
 
   final TextEditingController _waterController = TextEditingController(text: "0");
   final TextEditingController _sleepController = TextEditingController(text: "0");
   final TextEditingController _detailController = TextEditingController();
 
-  int _day = 13;
-  String _month = 'Sep';
-  int _year = 2025;
   String _selectedMood = 'none';
-
-  final List<int> _days = List.generate(31, (index) => index + 1);
-  final List<String> _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  final List<int> _years = [2024, 2025, 2026, 2027];
   final List<String> _moods = ['none', 'Happy 😊', 'Calm 😌', 'Tired 😫', 'Sad 😥'];
+
+  // ✅ เพิ่มตัวแปรสำหรับเก็บวันที่ปัจจุบัน
+  late DateTime _today;
+  late String _displayDate;
+  late String _dbFormattedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ กำหนดวันที่ปัจจุบันตอนเปิดหน้า
+    _today = DateTime.now();
+    
+    // รูปแบบโชว์บน UI (เช่น 05 Sep 2026)
+    final List<String> months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    _displayDate = "${_today.day.toString().padLeft(2, '0')} ${months[_today.month - 1]} ${_today.year}";
+    
+    // รูปแบบสำหรับบันทึกลง Database (YYYY-MM-DD)
+    _dbFormattedDate = "${_today.year}-${_today.month.toString().padLeft(2, '0')}-${_today.day.toString().padLeft(2, '0')}";
+    
+    // ✅ (Optional) ดึงข้อมูลของวันนี้มาโชว์ก่อนเผื่อเคยกรอกไว้แล้ว
+    _loadExistingRecord();
+  }
+
+  // ฟังก์ชันดึงข้อมูลเก่าของวันนี้มาแสดง (ถ้ามี)
+  Future<void> _loadExistingRecord() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final data = await supabase
+          .from('daily_records')
+          .select()
+          .eq('user_id', user.id)
+          .eq('record_date', _dbFormattedDate)
+          .maybeSingle();
+
+      if (data != null && mounted) {
+        setState(() {
+          _waterController.text = data['water_glasses']?.toString() ?? "0";
+          _sleepController.text = data['sleep_hours']?.toString() ?? "0";
+          _selectedMood = data['mood'] ?? 'none';
+          _detailController.text = data['detail_note'] ?? "";
+        });
+      }
+    } catch (e) {
+      debugPrint("No existing record or error: $e");
+    }
+  }
 
   @override
   void dispose() {
@@ -38,58 +78,50 @@ class _AddRecordPageState extends State<AddRecordPage> {
     super.dispose();
   }
 
-  // ฟังก์ชันแปลงชื่อเดือนเป็นตัวเลข (เช่น Sep -> 09) เพื่อให้ SQL อ่านได้
-  String _getMonthNumber(String monthName) {
-    int index = _months.indexOf(monthName) + 1;
-    return index.toString().padLeft(2, '0');
-  }
-
   int _getValue(TextEditingController controller) {
     if (controller.text.isEmpty) return 0;
     return int.tryParse(controller.text) ?? 0;
   }
 
-  // 2. ฟังก์ชันสำหรับบันทึกข้อมูลลง Supabase
+  // ✅ ฟังก์ชันบันทึกข้อมูล (ใช้ Upsert เพื่อให้บันทึกซ้ำวันเดิมได้)
   Future<void> _saveRecord() async {
-  try {
-    // 1. ตรวจสอบข้อมูลเบื้องต้น (Optional)
-    String monthNum = _getMonthNumber(_month);
-    String dayNum = _day.toString().padLeft(2, '0');
-    String formattedDate = '$_year-$monthNum-$dayNum';
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('User not logged in');
 
-    // 2. ส่งข้อมูลไป Supabase
-    await supabase.from('daily_records').insert({
-      'record_date': formattedDate,
-      'water_glasses': _getValue(_waterController),
-      'sleep_hours': _getValue(_sleepController),
-      'mood': _selectedMood,
-      'detail_note': _detailController.text,
-    });
+      // ✅ ใช้ .upsert() แทน .insert() เพื่อ Update ถ้ามีข้อมูลวันนี้อยู่แล้ว
+      await supabase.from('daily_records').upsert({
+        'user_id': user.id, // ต้องใส่ user_id ด้วยเพราะ Upsert ต้องการรู้ว่าอัปเดตของใคร
+        'record_date': _dbFormattedDate, // ใช้วันที่ปัจจุบันแบบ YYYY-MM-DD
+        'water_glasses': _getValue(_waterController),
+        'sleep_hours': _getValue(_sleepController),
+        'mood': _selectedMood,
+        'detail_note': _detailController.text,
+      }, onConflict: 'user_id, record_date'); // อ้างอิงจาก CONSTRAINT unique_daily_record ที่เราทำไว้ใน SQL
 
-    // --- จุดสำคัญที่ทำให้หน้าดำ ---
-    // ตรวจสอบก่อนว่า Widget ยัง "มีตัวตน" อยู่ไหมก่อนสั่ง Navigator
-    if (!mounted) return;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saved Successfully! 🎉'),
+          backgroundColor: Color(0xFF2D7D9A),
+        ),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Saved Successfully! 🎉'),
-        backgroundColor: Color(0xFF2D7D9A),
-      ),
-    );
+      // กลับไปหน้า MainScreen เพื่อรีเฟรชข้อมูล
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const MainScreen()),
+        (route) => false,
+      );
 
-    // ใช้คำสั่งนี้เพื่อกลับหน้าหลักอย่างปลอดภัย
-    Navigator.of(context).pop();
-
-  } catch (e) {
-    print("❌ Supabase Error: $e");
-    if (!mounted) return;
-    
-    // ถ้า Error ให้โชว์แจ้งเตือนแทนการปล่อยให้หน้าจอค้าง
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-    );
+    } catch (e) {
+      print("❌ Supabase Error: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -125,10 +157,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
     );
   }
 
-  // ====================================================================
-  // MAIN COMPONENTS
-  // ====================================================================
-
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
@@ -159,8 +187,8 @@ class _AddRecordPageState extends State<AddRecordPage> {
     return Row(
       children: [
         Expanded(
-          child: _buildGradientButton("Add", AppColors.stepsGradient, () {
-            _saveRecord(); // เรียกฟังก์ชันบันทึกข้อมูล
+          child: _buildGradientButton("Save", AppColors.stepsGradient, () {
+            _saveRecord();
           }),
         ),
         const SizedBox(width: 15),
@@ -173,7 +201,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
     );
   }
 
-  // --- ส่วนอื่นๆ เหมือนเดิม ---
   Widget _buildBigHeartIcon() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 25, top: 15),
@@ -222,17 +249,22 @@ class _AddRecordPageState extends State<AddRecordPage> {
     );
   }
 
+  // ✅ เปลี่ยน Header วันที่เป็นแบบล็อค (โชว์เฉพาะวันที่ปัจจุบัน)
   Widget _buildDateHeader() {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: const BoxDecoration(color: Color(0xFF2D7D9A)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildDateDropdown(_days, _day, (val) => setState(() => _day = val!)),
-          _buildDateDropdown(_months, _month, (val) => setState(() => _month = val!)),
-          _buildDateDropdown(_years, _year, (val) => setState(() => _year = val!)),
-        ],
+      child: Center(
+        child: Text(
+          "Today, $_displayDate", // แสดงผลเช่น Today, 05 Sep 2026
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontFamily: 'Poppins-SemiBold',
+            letterSpacing: 1.2,
+          ),
+        ),
       ),
     );
   }
@@ -374,21 +406,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
           const SizedBox(width: 10),
           SizedBox(width: 60, child: Text(unit, style: const TextStyle(color: Colors.black87, fontSize: 13, fontFamily: 'Poppins-Medium'))),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDateDropdown<T>(List<T> items, T value, ValueChanged<T?> onChanged) {
-    return Container(
-      height: 35, padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          icon: const Icon(Icons.keyboard_arrow_down, size: 16, color: Colors.black54),
-          items: items.map((i) => DropdownMenuItem(value: i, child: Text(i.toString(), style: const TextStyle(fontSize: 13, fontFamily: 'Poppins-Medium')))).toList(),
-          onChanged: onChanged,
-        ),
       ),
     );
   }
