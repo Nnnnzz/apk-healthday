@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // เพิ่มการ import
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_colors.dart';
 import 'signup_screen.dart';
 import 'main_screen.dart';
@@ -11,96 +11,150 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _emailController = TextEditingController();
+class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin {
+  final supabase = Supabase.instance.client;
+
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  
   bool _obscurePassword = true;
   bool _isLoading = false;
 
+  // Animation สำหรับปุ่มเปลี่ยนหน้า (Sign Up)
+  late AnimationController _signUpAnimationController;
+  late Animation<double> _signUpScaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _signUpAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _signUpScaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _signUpAnimationController, curve: Curves.easeInOut),
+    );
+  }
+
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
+    _signUpAnimationController.dispose();
     super.dispose();
   }
 
-  // ฟังก์ชัน Login จริงที่เชื่อมกับ Supabase
+  // ==========================================
+  // LOGIC
+  // ==========================================
   void _onLoginPressed() async {
-  final username = _emailController.text.trim(); // รับค่า tt จากช่อง username
-  final password = _passwordController.text.trim();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
 
-  if (username.isEmpty || password.isEmpty) {
-    _showSnackBar('กรุณากรอก Username และ Password');
-    return;
-  }
-
-  setState(() => _isLoading = true);
-
-  try {
-    // 🪄 เทคนิค: เติมหางให้อัตโนมัติในโค้ด
-    final String internalEmail = "$username@healthday.app"; 
-
-    final response = await Supabase.instance.client.auth.signInWithPassword(
-      email: internalEmail, // ส่งตัวที่เติมหางแล้วไปให้ Supabase
-      password: password,
-    );
-
-    if (mounted && response.user != null) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const MainScreen()),
-        (route) => false,
-      );
+    if (username.isEmpty || password.isEmpty) {
+      _showSnackBar('กรุณากรอก Username และ Password', isError: true);
+      return;
     }
-  } on AuthException catch (error) {
-    // ถ้าขึ้น Invalid login credentials แสดงว่า username หรือ password ผิด
-    _showSnackBar('Username หรือ Password ไม่ถูกต้อง');
-  } catch (error) {
-    _showSnackBar('เกิดข้อผิดพลาด กรุณาลองใหม่');
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
-  }
-}
 
-  void _showSnackBar(String message) {
+    setState(() => _isLoading = true);
+
+    try {
+      final String internalEmail = "$username@healthday.app"; 
+
+      final response = await supabase.auth.signInWithPassword(
+        email: internalEmail,
+        password: password,
+      );
+
+      if (mounted && response.user != null) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+          (route) => false,
+        );
+      }
+    } on AuthException {
+      _showSnackBar('Username หรือ Password ไม่ถูกต้อง', isError: true);
+    } catch (error) {
+      _showSnackBar('เกิดข้อผิดพลาด กรุณาลองใหม่', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = true}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
+  void _navigateToSignUp() {
+    _signUpAnimationController.forward().then((_) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => const SignUpScreen()));
+      _signUpAnimationController.reverse();
+    });
+  }
+
+  // ==========================================
+  // BUILD
+  // ==========================================
   @override
   Widget build(BuildContext context) {
-    // โครงสร้าง UI เดิมของคุณ (ตัดมาเฉพาะส่วนที่มีการแก้ไข onTap)
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
+      // เพื่อให้ Layout ปรับตามคีย์บอร์ดเมื่อเปิดขึ้นมา
       body: SafeArea(
-        child: SingleChildScrollView( // เพิ่มป้องกันคีย์บอร์ดบังหน้าจอ
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top,
-            child: Column(
-              children: [
-                _buildHeader(),
-                _buildLoginForm(),
-              ],
+        child: Column(
+          children: [
+            // ส่วนที่ 1: Header (ดันขึ้นไปด้านบนสุดด้วย Expanded)
+            Expanded(
+              child: _buildHeader(),
             ),
-          ),
+            
+            // ส่วนที่ 2: ฟอร์ม Login (ติดขอบล่าง)
+            _buildLoginForm(),
+          ],
         ),
       ),
     );
   }
 
-  // --- ส่วนประกอบ UI (เหมือนเดิมแต่ใส่ Logic เข้าไป) ---
+  // ==========================================
+  // UI COMPONENTS
+  // ==========================================
 
   Widget _buildHeader() {
-    return Expanded(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('LOGIN', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 2)),
-          const SizedBox(height: 40),
-          Image.asset('assets/images/Full_logo.png', width: 250, height: 200, fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Icon(Icons.health_and_safety, size: 80, color: Colors.blue)),
-        ],
+    return Container(
+      width: double.infinity,
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'LOGIN',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+                color: Color(0xFF5C5454),
+                fontFamily: 'Poppins',
+              ),
+            ),
+            const SizedBox(height: 20),
+            Image.asset(
+              'assets/images/Full_logo.png',
+              width: 230,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.health_and_safety, size: 80, color: Color(0xFF2D7D9A)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -112,25 +166,32 @@ class _LoginScreenState extends State<LoginScreen> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.primaryBlueGradient.colors.first, AppColors.primaryBlueGradient.colors.first.withOpacity(0.4)],
+          colors: [
+            AppColors.primaryBlueGradient.colors.first,
+            AppColors.primaryBlueGradient.colors.first.withOpacity(0.4),
+          ],
         ),
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(35), topRight: Radius.circular(35)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(35),
+          topRight: Radius.circular(35),
+        ),
       ),
-      padding: const EdgeInsets.fromLTRB(30, 40, 30, 40),
+      padding: const EdgeInsets.fromLTRB(25, 40, 25, 50),
       child: Column(
+        mainAxisSize: MainAxisSize.min, // ใช้พื้นที่เท่าที่เนื้อหาต้องการ
         children: [
-          _buildInputField(controller: _emailController, hintText: 'Username', keyboardType: TextInputType.emailAddress),
-          const SizedBox(height: 20),
-          _buildInputField(
+          _buildTextField(controller: _usernameController, hint: 'username'),
+          const SizedBox(height: 15),
+          _buildTextField(
             controller: _passwordController,
-            hintText: 'Password',
-            isPassword: true,
-            obscureText: _obscurePassword,
+            hint: 'password',
+            obscure: _obscurePassword,
+            hasToggle: true,
             onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 35),
           _buildLoginButton(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 25),
           _buildSignUpLink(),
         ],
       ),
@@ -146,11 +207,30 @@ class _LoginScreenState extends State<LoginScreen> {
         decoration: BoxDecoration(
           gradient: AppColors.primaryOrangeGradient,
           borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            )
+          ],
         ),
         child: Center(
           child: _isLoading
-              ? const CircularProgressIndicator(color: Colors.white)
-              : const Text('Login', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+              : const Text(
+                  'Login',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Poppins-Medium',
+                  ),
+                ),
         ),
       ),
     );
@@ -160,35 +240,63 @@ class _LoginScreenState extends State<LoginScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text("Don't have an account ? ", style: TextStyle(color: AppColors.darkText.withOpacity(0.6))),
-        GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SignUpScreen())),
-          child: Text('Sign Up', style: TextStyle(color: AppColors.primaryBlueGradient.colors.first, fontWeight: FontWeight.bold)),
+        Text(
+          "Don't have an account ? ",
+          style: TextStyle(
+            fontSize: 14,
+            color: AppColors.darkText.withOpacity(0.6),
+            fontFamily: 'Poppins',
+          ),
+        ),
+        ScaleTransition(
+          scale: _signUpScaleAnimation,
+          child: GestureDetector(
+            onTap: _navigateToSignUp,
+            child: Text(
+              'Sign Up',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primaryBlueGradient.colors.first,
+                fontFamily: 'Poppins',
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildInputField({
+  Widget _buildTextField({
     required TextEditingController controller,
-    required String hintText,
-    bool isPassword = false,
-    bool obscureText = false,
+    required String hint,
+    bool obscure = false,
+    bool hasToggle = false,
     VoidCallback? onToggle,
-    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+      ),
       child: TextField(
         controller: controller,
-        obscureText: obscureText,
-        keyboardType: keyboardType,
+        obscureText: obscure,
+        style: const TextStyle(color: AppColors.darkText, fontFamily: 'Poppins'),
         decoration: InputDecoration(
-          hintText: hintText,
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.grey, fontSize: 14, fontFamily: 'Poppins'),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
-          suffixIcon: isPassword
-              ? IconButton(icon: Icon(obscureText ? Icons.visibility_off : Icons.visibility), onPressed: onToggle)
+          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+          suffixIcon: hasToggle
+              ? IconButton(
+                  icon: Icon(
+                    obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
+                  onPressed: onToggle,
+                )
               : null,
         ),
       ),
