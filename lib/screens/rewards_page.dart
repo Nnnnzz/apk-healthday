@@ -36,8 +36,11 @@ class RewardsShopPage extends StatefulWidget {
 }
 
 class _RewardsShopPageState extends State<RewardsShopPage> {
+  final supabase = Supabase.instance.client;
   int? _expandedIndex;
   int? _pressedIndex;
+  late int _currentPoints; 
+  bool _isLoading = true; // ✅ เพิ่มสถานะโหลดข้อมูล
 
   final List<RewardItem> _rewards = const [
     RewardItem(
@@ -68,6 +71,37 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _currentPoints = widget.userPoints;
+    _fetchUserPoints(); // ✅ ดึงคะแนนจริงจาก DB ทันทีที่เข้าหน้านี้
+  }
+
+  // ✅ ฟังก์ชันดึงคะแนนล่าสุดจาก Database
+  Future<void> _fetchUserPoints() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final data = await supabase
+          .from('users')
+          .select('points')
+          .eq('user_id', user.id)
+          .single();
+
+      if (mounted) {
+        setState(() {
+          _currentPoints = data['points'] ?? 0;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching points: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _onCardTap(int index) {
     setState(() => _expandedIndex = (_expandedIndex == index) ? null : index);
   }
@@ -80,31 +114,72 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
     );
   }
 
-  // ✅ ระบบแจ้งเตือนและการแลกของรางวัลจากโค้ดเดิม
-  void _onPurchase(RewardItem reward) {
-    if (widget.userPoints < reward.points) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Not enough points', 
-            style: TextStyle(fontFamily: 'Poppins-Medium', fontWeight: FontWeight.bold)),
-          content: Text(
-            'You need ${reward.points} pts to redeem "${reward.title}".\nYou only have ${widget.userPoints} pts.', 
-            style: const TextStyle(fontFamily: 'Poppins')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('OK', style: TextStyle(color: reward.titleColor, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      );
+  Future<void> _onPurchase(RewardItem reward) async {
+    if (_currentPoints < reward.points) {
+      _showErrorDialog(reward);
       return;
     }
 
+    final bool? confirm = await _showConfirmDialog(reward);
+    
+    if (confirm == true) {
+      try {
+        final user = supabase.auth.currentUser;
+        if (user == null) return;
+
+        // 1. คำนวณคะแนนใหม่
+        int newPoints = _currentPoints - reward.points;
+
+        // 2. อัปเดตลง Supabase
+        await supabase
+            .from('users')
+            .update({'points': newPoints})
+            .eq('user_id', user.id);
+
+        // 3. อัปเดต UI ในแอป
+        setState(() {
+          _currentPoints = newPoints;
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${reward.title}" redeemed successfully!', 
+              style: const TextStyle(fontFamily: 'Poppins-Medium', color: Colors.white)),
+            backgroundColor: reward.titleColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      } catch (e) {
+        debugPrint("Error redeeming: $e");
+      }
+    }
+  }
+
+  void _showErrorDialog(RewardItem reward) {
     showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Not enough points', 
+          style: TextStyle(fontFamily: 'Poppins-Medium', fontWeight: FontWeight.bold)),
+        content: Text(
+          'You need ${reward.points} pts to redeem "${reward.title}".\nYou only have $_currentPoints pts.', 
+          style: const TextStyle(fontFamily: 'Poppins')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK', style: TextStyle(color: reward.titleColor, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showConfirmDialog(RewardItem reward) {
+    return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: Colors.white,
@@ -115,28 +190,15 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
           style: const TextStyle(fontFamily: 'Poppins')),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontFamily: 'Poppins')),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: reward.titleColor, 
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
             ),
-            onPressed: () {
-              Navigator.pop(context); // ปิด Dialog
-              // แสดง SnackBar แจ้งเตือนสำเร็จ
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('"${reward.title}" redeemed successfully!', 
-                    style: const TextStyle(fontFamily: 'Poppins-Medium', color: Colors.white)),
-                  backgroundColor: reward.titleColor,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              );
-            },
+            onPressed: () => Navigator.pop(context, true),
             child: const Text('Confirm', style: TextStyle(fontFamily: 'Poppins-Medium', fontWeight: FontWeight.bold, color: Colors.white)),
           ),
         ],
@@ -151,14 +213,16 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
       extendBody: true,
       body: SafeArea(
         bottom: false,
-        child: SingleChildScrollView(
+        child: _isLoading 
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A))) // ✅ โชว์โหลดข้อมูล
+          : SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             children: [
               const SizedBox(height: 10),
               _buildHeader(context),
               const SizedBox(height: 20),
-              _buildPointsCardDesign(),
+              _buildPointsCardDesign(), 
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 25),
@@ -237,7 +301,7 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
               padding: const EdgeInsets.symmetric(vertical: 30),
               decoration: const BoxDecoration(gradient: AppColors.primaryOrangeGradient),
               child: Center(
-                child: Text('${widget.userPoints} Pts', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: AppColors.lightText, fontFamily: 'Poppins-Medium')),
+                child: Text('$_currentPoints Pts', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: AppColors.lightText, fontFamily: 'Poppins-Medium')),
               ),
             ),
           ],
@@ -300,7 +364,6 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            // ✅ เรียกใช้ฟังก์ชันแลกของรางวัล
                             onPressed: () => _onPurchase(reward),
                             child: const Text('Redeem Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Poppins-Medium')),
                           ),

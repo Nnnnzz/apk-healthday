@@ -1,5 +1,9 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart'; // อย่าลืมเพิ่มใน pubspec.yaml
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:path/path.dart' as p;
 import '../constants/app_colors.dart';
 
 class PersonalInfoPage extends StatefulWidget {
@@ -10,10 +14,114 @@ class PersonalInfoPage extends StatefulWidget {
 }
 
 class _PersonalInfoPageState extends State<PersonalInfoPage> {
+  final supabase = Supabase.instance.client;
+
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _heightController = TextEditingController();
+
+  File? _imageFile; // เก็บไฟล์รูปที่เลือกใหม่
+  String? _currentImageUrl; // URL รูปปัจจุบันจาก DB
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  // 1. ดึงข้อมูล User จาก Database
+  Future<void> _loadUserData() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final data = await supabase
+          .from('users')
+          .select()
+          .eq('user_id', user.id)
+          .single();
+
+      setState(() {
+        _firstNameController.text = data['first_name'] ?? '';
+        _lastNameController.text = data['last_name'] ?? '';
+        _weightController.text = data['weight_kg']?.toString() ?? '';
+        _heightController.text = data['height_cm']?.toString() ?? '';
+        _currentImageUrl = data['profile_image_url'];
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Error loading user data: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // 2. ฟังก์ชันเลือกรูปภาพ
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 50, // ลดขนาดรูปเพื่อความเร็วในการอัปโหลด
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+    }
+  }
+
+  // 3. ฟังก์ชันอัปโหลดรูปและบันทึกข้อมูล
+  Future<void> _saveData() async {
+    setState(() => _isSaving = true);
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      String? finalImageUrl = _currentImageUrl;
+
+      // --- อัปโหลดรูปภาพถ้ามีการเลือกใหม่ ---
+      if (_imageFile != null) {
+        final fileExt = p.extension(_imageFile!.path);
+        final fileName = '${user.id}_${DateTime.now().millisecondsSinceEpoch}$fileExt';
+
+        await supabase.storage.from('profiles').upload(
+          fileName,
+          _imageFile!,
+          fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+        );
+
+        finalImageUrl = supabase.storage.from('profiles').getPublicUrl(fileName);
+      }
+
+      // --- อัปเดตข้อมูลลงตาราง users ---
+      await supabase.from('users').update({
+        'first_name': _firstNameController.text.trim(),
+        'last_name': _lastNameController.text.trim(),
+        'weight_kg': double.tryParse(_weightController.text),
+        'height_cm': double.tryParse(_heightController.text),
+        'profile_image_url': finalImageUrl,
+      }).eq('user_id', user.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Profile updated successfully! 🎉")),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      debugPrint("Error saving data: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -30,24 +138,25 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
       backgroundColor: AppColors.backgroundColor,
       body: Stack(
         children: [
-          // 1. แสงฟุ้งและวงกลมพื้นหลัง
           _buildBackgroundDecorations(),
-
-          // 2. เนื้อหาหลัก
-          SafeArea(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildHeader(context),
-                  const SizedBox(height: 20),
-                  _buildGlassCard(),
-                  const SizedBox(height: 30),
-                  _buildSaveButton(),
-                  const SizedBox(height: 40),
-                ],
-              ),
-            ),
-          ),
+          _isLoading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A)))
+              : SafeArea(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _buildHeader(context),
+                        const SizedBox(height: 20),
+                        _buildGlassCard(),
+                        const SizedBox(height: 30),
+                        _isSaving 
+                          ? const CircularProgressIndicator(color: Colors.orange) 
+                          : _buildSaveButton(),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
         ],
       ),
     );
@@ -59,11 +168,11 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // เปลี่ยนเป็น Navigator.pop(context) แบบหน้า Goals
           GestureDetector(
-            onTap: () => Navigator.pop(context), 
+            onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.only(left: 20, top: 10, bottom: 10, right: 10),
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(left: 10),
               child: const Row(
                 children: [
                   Icon(Icons.arrow_back_ios_new, size: 16, color: AppColors.greyText),
@@ -73,23 +182,12 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
               ),
             ),
           ),
-          const Text(
-            "Personal Information",
-            style: TextStyle(
-              color: AppColors.greyText,
-              fontSize: 18,
-              fontFamily: 'Poppins-Medium',
-            ),
-          ),
-          const SizedBox(width: 60), // สำหรับบาลานซ์ให้ Title ตรงกลาง
+          const Text("Profile", style: TextStyle(color: AppColors.greyText, fontSize: 18, fontFamily: 'Poppins-Medium')),
+          const SizedBox(width: 60),
         ],
       ),
     );
   }
-
-  // ====================================================================
-  // MAIN COMPONENTS
-  // ====================================================================
 
   Widget _buildGlassCard() {
     return Padding(
@@ -98,32 +196,25 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(30),
           border: Border.all(color: AppColors.glassBorderColor, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
-          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(30),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
             child: Container(
-              color: AppColors.glassColor, 
+              color: AppColors.glassColor,
               padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 30),
               child: Column(
                 children: [
                   _buildProfileAvatar(),
                   const SizedBox(height: 35),
-                  _buildTextField(_firstNameController, "firstname"),
+                  _buildTextField(_firstNameController, "First Name"),
                   const SizedBox(height: 15),
-                  _buildTextField(_lastNameController, "lastname"),
+                  _buildTextField(_lastNameController, "Last Name"),
                   const SizedBox(height: 15),
-                  _buildTextField(_weightController, "weight(kg)"), 
+                  _buildTextField(_weightController, "Weight (kg)", isNumber: true),
                   const SizedBox(height: 15),
-                  _buildTextField(_heightController, "height(cm)"),
+                  _buildTextField(_heightController, "Height (cm)", isNumber: true),
                 ],
               ),
             ),
@@ -137,28 +228,37 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
     return Center(
       child: Stack(
         children: [
-          // วงกลมรูปโปรไฟล์
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade400,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.person_outline, size: 55, color: Colors.white),
-          ),
-          // ปุ่มปากกาแก้ไข (Edit)
-          Positioned(
-            bottom: 0,
-            right: 0,
+          GestureDetector(
+            onTap: _pickImage,
             child: Container(
-              width: 32,
-              height: 32,
-              decoration: const BoxDecoration(
-                color: AppColors.darkText, 
+              width: 110,
+              height: 110,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
                 shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+                image: _imageFile != null
+                    ? DecorationImage(image: FileImage(_imageFile!), fit: BoxFit.cover)
+                    : (_currentImageUrl != null
+                        ? DecorationImage(image: NetworkImage(_currentImageUrl!), fit: BoxFit.cover)
+                        : null),
               ),
-              child: const Icon(Icons.edit, color: Colors.white, size: 16),
+              child: (_imageFile == null && _currentImageUrl == null)
+                  ? const Icon(Icons.person_outline, size: 55, color: Colors.white)
+                  : null,
+            ),
+          ),
+          Positioned(
+            bottom: 5,
+            right: 5,
+            child: GestureDetector(
+              onTap: _pickImage,
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(color: AppColors.darkText, shape: BoxShape.circle),
+                child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+              ),
             ),
           ),
         ],
@@ -166,15 +266,13 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String hint) {
+  Widget _buildTextField(TextEditingController controller, String hint, {bool isNumber = false}) {
     return Container(
       height: 50,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(25),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
       child: TextField(
         controller: controller,
+        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
         style: const TextStyle(fontFamily: 'Poppins-Medium', color: AppColors.darkText, fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,
@@ -190,11 +288,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25.0),
       child: GestureDetector(
-        onTap: () {
-          // โค้ดสำหรับเซฟข้อมูล
-          print("Saved!");
-          Navigator.pop(context); // กดเซฟแล้วเด้งกลับอัตโนมัติ
-        },
+        onTap: _saveData,
         child: Container(
           height: 55,
           width: double.infinity,
@@ -210,42 +304,17 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
             ],
           ),
           child: const Center(
-            child: Text(
-              "Save",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontFamily: 'Poppins-SemiBold',
-              ),
-            ),
+            child: Text("Save Changes", style: TextStyle(color: Colors.white, fontSize: 18, fontFamily: 'Poppins-SemiBold')),
           ),
         ),
       ),
     );
   }
 
-  // ====================================================================
-  // HELPER WIDGETS
-  // ====================================================================
-
   Widget _buildBackgroundDecorations() {
     return Stack(
       children: [
-        // 1. วงกลมสีส้มทึบมุมซ้ายบน
-        Positioned(
-          top: -40,
-          left: -60,
-          child: Container(
-            width: 180,
-            height: 180,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppColors.primaryOrangeGradient.scale(0.7),
-            ),
-          ),
-        ),
-        
-        // 2. แสงฟุ้ง (Orbs)
+        Positioned(top: -40, left: -60, child: Container(width: 180, height: 180, decoration: BoxDecoration(shape: BoxShape.circle, gradient: AppColors.primaryOrangeGradient.scale(0.7)))),
         Positioned(top: 100, right: -50, child: _orb(200, AppColors.primaryBlueGradient)),
         Positioned(bottom: 250, left: -50, child: _orb(250, AppColors.primaryBlueGradient)),
         Positioned(bottom: -50, right: -50, child: _orb(300, AppColors.primaryOrangeGradient)),

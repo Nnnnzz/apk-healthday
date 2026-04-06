@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:ui';
 import '../constants/app_colors.dart';
 
@@ -10,65 +11,102 @@ class NotificationPage extends StatefulWidget {
 }
 
 class _NotificationPageState extends State<NotificationPage> {
-  // 1. ข้อมูลจำลอง (Mock Data)
-  final List<Map<String, String>> _notifications = [
-    {
-      'id': '1',
-      'msg': 'It\'s time to drink some water. 💧',
-      'time': '14:00 - 13/09/2026',
-    },
-    {
-      'id': '2',
-      'msg': 'It\'s time to drink some water. 💧',
-      'time': '13:00 - 13/09/2026',
-    },
-    {
-      'id': '3',
-      'msg': 'It\'s time to drink some water. 💧',
-      'time': '12:00 - 13/09/2026',
-    },
-    {
-      'id': '4',
-      'msg': 'It\'s time to drink some water. 💧',
-      'time': '09:00 - 13/09/2026',
-    },
-    {
-      'id': '5',
-      'msg': 'It\'s time to drink some water. 💧',
-      'time': '09:00 - 13/09/2026',
-    },
-  ];
+  final supabase = Supabase.instance.client;
+  
+  // เปลี่ยนมารับข้อมูล Dynamic จาก Database
+  List<Map<String, dynamic>> _notifications = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNotifications();
+  }
+
+  // 1. ดึงข้อมูลจากตาราง notifications ของ User คนนี้
+  Future<void> _fetchNotifications() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final data = await supabase
+          .from('notifications')
+          .select()
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false); // เรียงจากใหม่ไปเก่า
+
+      if (mounted) {
+        setState(() {
+          _notifications = List<Map<String, dynamic>>.from(data);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching notifications: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // 2. ฟังก์ชันปัดลบทีละอัน
+  Future<void> _deleteNotification(dynamic id, int index) async {
+    try {
+      // เอาออกจากหน้าจอก่อนเพื่อความสมูท
+      setState(() => _notifications.removeAt(index));
+      // ลบจากฐานข้อมูลจริงๆ
+      await supabase.from('notifications').delete().eq('notification_id', id);
+    } catch (e) {
+      debugPrint('Error deleting notification: $e');
+    }
+  }
+
+  // 3. ฟังก์ชันลบทั้งหมด (Clear All)
+  Future<void> _clearAllNotifications() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      setState(() => _notifications.clear());
+      await supabase.from('notifications').delete().eq('user_id', user.id);
+    } catch (e) {
+      debugPrint('Error clearing notifications: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundColor, // ไม่มี Background Orbs ตามรีเควส
+      backgroundColor: AppColors.backgroundColor,
       body: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 10),
             _buildHeader(context),
             const SizedBox(height: 10),
+            
             // แสดงปุ่ม Clear All ก็ต่อเมื่อมี Notification
             if (_notifications.isNotEmpty) _buildClearButton(), 
+
             Expanded(
-              child: _notifications.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(top: 5, bottom: 100),
-                      itemCount: _notifications.length,
-                      itemBuilder: (context, index) {
-                        final item = _notifications[index];
-                        return _buildDismissibleItem(item, index);
-                      },
-                    ),
+              child: _isLoading
+                  ? Center(child: CircularProgressIndicator(color: AppColors.primaryOrangeGradient.colors.first))
+                  : _notifications.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(top: 5, bottom: 100),
+                          itemCount: _notifications.length,
+                          itemBuilder: (context, index) {
+                            final item = _notifications[index];
+                            return _buildDismissibleItem(item, index);
+                          },
+                        ),
             ),
           ],
         ),
       ),
     );
   }
+
   // HELPER WIDGETS
-  // เตรียมฟังก์ชันไล่สี (Gradient Text) ไว้ใช้เป็นมาตรฐาน
   Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
     return ShaderMask(
       blendMode: BlendMode.srcIn,
@@ -76,13 +114,13 @@ class _NotificationPageState extends State<NotificationPage> {
       child: Text(text, style: style),
     );
   }
+
   // MAIN COMPONENTS
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          // ปรับเป็น GestureDetector แบบเดียวกับหน้าอื่นๆ
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
@@ -101,7 +139,7 @@ class _NotificationPageState extends State<NotificationPage> {
               child: Text("Notifications", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.greyText)),
             ),
           ),
-          const SizedBox(width: 60), // สำหรับบาลานซ์ให้ Title ตรงกลาง
+          const SizedBox(width: 60), 
         ],
       ),
     );
@@ -113,7 +151,7 @@ class _NotificationPageState extends State<NotificationPage> {
       child: Align(
         alignment: Alignment.centerRight,
         child: GestureDetector(
-          onTap: () => setState(() => _notifications.clear()),
+          onTap: _clearAllNotifications, // เรียกฟังก์ชันลบทั้งหมดจาก Database
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
             decoration: BoxDecoration(
@@ -133,12 +171,11 @@ class _NotificationPageState extends State<NotificationPage> {
     );
   }
 
-  Widget _buildDismissibleItem(Map<String, String> item, int index) {
+  Widget _buildDismissibleItem(Map<String, dynamic> item, int index) {
     return Dismissible(
-      key: Key(item['id']!),
-      direction: DismissDirection.endToStart, // สไลด์จากขวาไปซ้าย
-      onDismissed: (direction) => setState(() => _notifications.removeAt(index)),
-      // พื้นหลังตอนสไลด์ (ขอบโค้งเท่ากับตัว Card)
+      key: Key(item['notification_id'].toString()), // ใช้ ID จาก Database เป็น Key
+      direction: DismissDirection.endToStart, 
+      onDismissed: (direction) => _deleteNotification(item['notification_id'], index), // สั่งลบ
       background: Container(
         margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         padding: const EdgeInsets.only(right: 25),
@@ -153,7 +190,11 @@ class _NotificationPageState extends State<NotificationPage> {
     );
   }
 
-  Widget _buildNotificationCard(Map<String, String> item) {
+  Widget _buildNotificationCard(Map<String, dynamic> item) {
+    // จัด Format เวลาที่ดึงมาจากฐานข้อมูล
+    DateTime createdAt = DateTime.parse(item['created_at']).toLocal();
+    String formattedTime = "${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')} - ${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')}/${createdAt.year}";
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       padding: const EdgeInsets.all(16),
@@ -167,11 +208,10 @@ class _NotificationPageState extends State<NotificationPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ไอคอนวงกลมด้านหน้า
           Container(
             padding: const EdgeInsets.all(10),
             decoration: const BoxDecoration(
-              gradient: AppColors.primaryBlueGradient, // หรือเปลี่ยนตามประเภทแจ้งเตือนได้
+              gradient: AppColors.primaryBlueGradient, 
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 20),
@@ -182,12 +222,12 @@ class _NotificationPageState extends State<NotificationPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item['msg']!,
+                  item['message'] ?? '', // ดึงข้อความจาก Database
                   style: const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 15, color: AppColors.darkText),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  item['time']!,
+                  formattedTime, // แสดงเวลาที่แปลงแล้ว
                   style: const TextStyle(fontFamily: 'Poppins-Medium', color: AppColors.greyText, fontSize: 12),
                 ),
               ],

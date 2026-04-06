@@ -33,6 +33,7 @@ class _PointPageState extends State<PointPage> {
   // LOGIC
   // ==========================================
   Future<void> _fetchPointsData(DateTime date) async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final user = supabase.auth.currentUser;
@@ -56,18 +57,41 @@ class _PointPageState extends State<PointPage> {
         String mood = recordData['mood'] ?? 'none';
         String note = recordData['detail_note'] ?? '';
 
+        // ✅ เช็คจาก Database ว่าภารกิจเหล่านี้ได้รับพอยต์หรือยัง (Smart Reward)
+        bool stepRewarded = recordData['step_rewarded'] ?? false;
+        bool waterRewarded = recordData['water_rewarded'] ?? false;
+        bool sleepRewarded = recordData['sleep_rewarded'] ?? false;
+
         if (steps > 0) {
-          newEvents.add({'type': 'steps', 'label': 'Steps:', 'value': '$steps', 'unit': 'steps', 'points': 20});
+          newEvents.add({
+            'type': 'steps', 
+            'label': 'Steps:', 
+            'value': '$steps', 
+            'unit': 'steps', 
+            'points': stepRewarded ? 20 : null // ถ้าสำเร็จจริงให้โชว์ 20
+          });
         }
         if (water > 0) {
-          newEvents.add({'type': 'water', 'label': 'Waters:', 'value': '$water', 'unit': 'glasses', 'points': 5});
+          newEvents.add({
+            'type': 'water', 
+            'label': 'Waters:', 
+            'value': '$water', 
+            'unit': 'glasses', 
+            'points': waterRewarded ? 20 : null
+          });
         }
         if (sleep > 0) {
-          newEvents.add({'type': 'sleep', 'label': 'Sleeps:', 'value': '$sleep', 'unit': 'hours', 'points': 7});
+          newEvents.add({
+            'type': 'sleep', 
+            'label': 'Sleeps:', 
+            'value': '$sleep', 
+            'unit': 'hours', 
+            'points': sleepRewarded ? 20 : null
+          });
         }
         if (mood != 'none') {
           String displayMood = mood[0].toUpperCase() + mood.substring(1);
-          newEvents.add({'type': 'mood', 'label': 'Moods:', 'value': displayMood, 'unit': '', 'points': 3});
+          newEvents.add({'type': 'mood', 'label': 'Moods:', 'value': displayMood, 'unit': '', 'points': null});
         }
         if (note.isNotEmpty) {
           newEvents.add({'type': 'note', 'value': note});
@@ -103,7 +127,7 @@ class _PointPageState extends State<PointPage> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(primary: AppColors.primaryBlueGradient.colors.first),
+            colorScheme: ColorScheme.light(primary: const Color(0xFF2D7D9A)),
           ),
           child: child!,
         );
@@ -115,15 +139,6 @@ class _PointPageState extends State<PointPage> {
     }
   }
 
-  // พากลับไป MainScreen (Home)
-  void _backToMain() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const MainScreen()),
-      (route) => false,
-    );
-  }
-
   // ==========================================
   // MAIN BUILD
   // ==========================================
@@ -131,29 +146,33 @@ class _PointPageState extends State<PointPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
-      extendBody: true, // ให้เนื้อหาไหลลงไปหลัง Navbar มุมโค้งได้
+      extendBody: true,
       body: SafeArea(
-        bottom: false, // ปล่อยพื้นที่ด้านล่างให้ Navbar จัดการ
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
-              _buildHeader(context),
-              const SizedBox(height: 20),
-              
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 100),
-                  child: Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A))),
-                )
-              else ...[
-                _buildPointsCard(),
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: () => _fetchPointsData(_selectedDate),
+          color: const Color(0xFF2D7D9A),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                _buildHeader(context),
                 const SizedBox(height: 20),
-                _buildDailyRecordsContainer(),
-                const SizedBox(height: 120), // กัน Navbar บังเนื้อหาล่างสุด
+                
+                if (_isLoading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 100),
+                    child: Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A))),
+                  )
+                else ...[
+                  _buildPointsCard(),
+                  const SizedBox(height: 20),
+                  _buildDailyRecordsContainer(),
+                  const SizedBox(height: 140), 
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -178,19 +197,25 @@ class _PointPageState extends State<PointPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildNavItem('assets/icons/home_icon.png', 'home'),
-          _buildNavItem('assets/icons/stat_icon.png', 'stats'),
+          _buildNavItem('assets/icons/home_icon.png', 'home', 0),
+          _buildNavItem('assets/icons/stat_icon.png', 'stats', 1),
           _buildAddButton(),
-          _buildNavItem('assets/icons/calendar_icon.png', 'calendar'),
-          _buildNavItem('assets/icons/setting_icon.png', 'settings'),
+          _buildNavItem('assets/icons/calendar_icon.png', 'calendar', 2),
+          _buildNavItem('assets/icons/setting_icon.png', 'settings', 3),
         ],
       ),
     );
   }
 
-  Widget _buildNavItem(String iconPath, String label) {
+  Widget _buildNavItem(String iconPath, String label, int index) {
     return GestureDetector(
-      onTap: _backToMain,
+      onTap: () {
+         Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+          (route) => false,
+        );
+      },
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -204,19 +229,24 @@ class _PointPageState extends State<PointPage> {
   }
 
   Widget _buildAddButton() {
-    return Container(
-      width: 60, height: 60,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: AppColors.primaryOrangeGradient,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryOrangeGradient.colors.first.withOpacity(0.3),
-            blurRadius: 12, offset: const Offset(0, 4),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () {
+        // สามารถนำทางไปหน้า Add Record ได้ตรงนี้
+      },
+      child: Container(
+        width: 60, height: 60,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: AppColors.primaryOrangeGradient,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryOrangeGradient.colors.first.withOpacity(0.3),
+              blurRadius: 12, offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.add, color: Colors.white, size: 35),
       ),
-      child: const Icon(Icons.add, color: Colors.white, size: 35),
     );
   }
 
@@ -258,7 +288,7 @@ class _PointPageState extends State<PointPage> {
         width: double.infinity,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(25),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 5))],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(25),
@@ -270,9 +300,9 @@ class _PointPageState extends State<PointPage> {
                 decoration: const BoxDecoration(gradient: AppColors.primaryBlueGradient),
                 child: const Row(
                   children: [
-                    Icon(Icons.star_rounded, color: AppColors.lightText, size: 28),
+                    Icon(Icons.stars_rounded, color: AppColors.lightText, size: 28),
                     SizedBox(width: 10),
-                    Text('Total Points', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.lightText, fontFamily: 'Poppins-Medium')),
+                    Text('Current Balance', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.lightText, fontFamily: 'Poppins-Medium')),
                   ],
                 ),
               ),
@@ -281,7 +311,7 @@ class _PointPageState extends State<PointPage> {
                 padding: const EdgeInsets.symmetric(vertical: 30),
                 decoration: const BoxDecoration(gradient: AppColors.primaryOrangeGradient),
                 child: Center(
-                  child: Text('$_totalPoints Pts', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: AppColors.lightText, fontFamily: 'Poppins-Medium')),
+                  child: Text('$_totalPoints Pts', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppColors.lightText, fontFamily: 'Poppins-SemiBold')),
                 ),
               ),
             ],
@@ -303,13 +333,8 @@ class _PointPageState extends State<PointPage> {
         borderRadius: BorderRadius.circular(25),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
       ),
-      child: Container(
+      child: Padding(
         padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: Colors.white, 
-          borderRadius: BorderRadius.circular(25),
-          border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -359,8 +384,8 @@ class _PointPageState extends State<PointPage> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(8),
-        decoration: const BoxDecoration(color: AppColors.backgroundColor, shape: BoxShape.circle),
-        child: Icon(icon, size: 16, color: AppColors.greyText),
+        decoration: BoxDecoration(color: Colors.grey.withOpacity(0.1), shape: BoxShape.circle),
+        child: Icon(icon, size: 14, color: AppColors.greyText),
       ),
     );
   }
@@ -370,28 +395,39 @@ class _PointPageState extends State<PointPage> {
     final points = item['points'] as int?;
     
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
           Image.asset(
-            theme.iconPath, width: 26, height: 26, fit: BoxFit.contain,
-            errorBuilder: (c, e, s) => Icon(Icons.broken_image, color: theme.gradient.colors.first, size: 26),
+            theme.iconPath, width: 24, height: 24, fit: BoxFit.contain,
+            errorBuilder: (c, e, s) => Icon(Icons.check_circle_outline, color: theme.gradient.colors.first, size: 24),
           ),
           const SizedBox(width: 15),
-          ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: (bounds) => theme.gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-            child: Text(item['label'], style: const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 16)),
-          ),
-          const SizedBox(width: 10),
           Expanded(
-            child: Text("${item['value']} ${item['unit']}".trim(), style: const TextStyle(fontSize: 16, color: Colors.black87, fontFamily: 'Poppins-Medium')),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShaderMask(
+                  blendMode: BlendMode.srcIn,
+                  shaderCallback: (bounds) => theme.gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
+                  child: Text(item['label'], style: const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 14)),
+                ),
+                Text("${item['value']} ${item['unit']}".trim(), style: const TextStyle(fontSize: 16, color: Colors.black87, fontFamily: 'Poppins-SemiBold')),
+              ],
+            ),
           ),
           if (points != null)
-             ShaderMask(
-                blendMode: BlendMode.srcIn,
-                shaderCallback: (bounds) => theme.gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-                child: Text('+$points Pts', style: const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 16, fontWeight: FontWeight.bold)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: theme.gradient.scale(0.2), // สร้างพื้นหลังจางๆ
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: ShaderMask(
+                  blendMode: BlendMode.srcIn,
+                  shaderCallback: (bounds) => theme.gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
+                  child: Text('+$points Pts', style: const TextStyle(fontFamily: 'Poppins-SemiBold', fontSize: 14)),
+                ),
               ),
         ],
       ),
@@ -403,20 +439,24 @@ class _PointPageState extends State<PointPage> {
       width: double.infinity,
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.black.withOpacity(0.05))),
-      child: Text(note, style: const TextStyle(fontSize: 15, color: Colors.black54, fontFamily: 'Poppins-Medium')),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F9F9), 
+        borderRadius: BorderRadius.circular(15), 
+        border: Border.all(color: Colors.black.withOpacity(0.03))
+      ),
+      child: Text(note, style: const TextStyle(fontSize: 14, color: Colors.black54, fontFamily: 'Poppins-Medium')),
     );
   }
 
   Widget _buildEmptyState() {
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 20),
+      padding: EdgeInsets.symmetric(vertical: 30),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.event_note_outlined, color: Colors.grey, size: 50),
+            Icon(Icons.history_rounded, color: Colors.grey, size: 40),
             SizedBox(height: 10),
-            Text("No records for this day", style: TextStyle(color: AppColors.greyText, fontFamily: 'Poppins-Medium')),
+            Text("No activity recorded", style: TextStyle(color: Colors.grey, fontSize: 14, fontFamily: 'Poppins-Medium')),
           ],
         ),
       ),
