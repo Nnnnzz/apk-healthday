@@ -47,11 +47,33 @@ class _GoalsPageState extends State<GoalsPage> {
       final user = supabase.auth.currentUser;
       if (user != null) {
         final data = await supabase.from('user_goals').select().eq('user_id', user.id).maybeSingle();
+        
         if (data != null && mounted) {
+          // ✅ เช็ควันที่อัปเดตล่าสุด
+          DateTime? updatedAt;
+          if (data['updated_at'] != null) {
+            updatedAt = DateTime.parse(data['updated_at']).toLocal();
+          }
+          
+          DateTime today = DateTime.now();
+          bool isToday = updatedAt != null && 
+                         updatedAt.year == today.year && 
+                         updatedAt.month == today.month && 
+                         updatedAt.day == today.day;
+
           setState(() {
-            _stepsGoal = data['target_steps'] ?? 8000;
-            _waterGoal = data['target_water'] ?? 8;
-            _sleepGoal = data['target_sleep'] ?? 8;
+            if (isToday) {
+              // ถ้าเป็นของ "วันนี้" ให้ดึงค่าที่เคยตั้งไว้มาโชว์
+              _stepsGoal = data['target_steps'] ?? 8000;
+              _waterGoal = data['target_water'] ?? 8;
+              _sleepGoal = data['target_sleep'] ?? 8;
+            } else {
+              // ✅ ถ้าขึ้นวันใหม่แล้ว (หรือยังไม่เคยมีข้อมูล) ให้รีเซ็ตกลับเป็นค่า Default
+              _stepsGoal = 8000;
+              _waterGoal = 8;
+              _sleepGoal = 8;
+            }
+            
             _stepsController.text = "$_stepsGoal";
             _waterController.text = "$_waterGoal";
             _sleepController.text = "$_sleepGoal";
@@ -88,11 +110,13 @@ class _GoalsPageState extends State<GoalsPage> {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception("User not logged in");
+      
       await supabase.from('user_goals').upsert({
         'user_id': user.id,
         'target_steps': finalSteps,
         'target_water': finalWater,
         'target_sleep': finalSleep,
+        'updated_at': DateTime.now().toIso8601String(), // ✅ บังคับอัปเดตเวลาเสมอตอนกดเซฟ
       }, onConflict: 'user_id');
 
       if (!mounted) return;
@@ -193,7 +217,7 @@ class _GoalsPageState extends State<GoalsPage> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), // ✅ Glass Texture ทับทั้งกล่อง
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), // Glass Texture ทับทั้งกล่อง
           child: Column(
             children: [
               Container(
@@ -237,8 +261,6 @@ class _GoalsPageState extends State<GoalsPage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               IconButton(onPressed: onDecrease, icon: const Icon(Icons.remove, size: 18, color: Colors.grey)),
-                              
-                              // ✅ เปลี่ยนจาก Text เป็น TextField เพื่อให้พิมพ์ได้
                               Expanded(
                                 child: TextField(
                                   controller: controller,
@@ -249,7 +271,6 @@ class _GoalsPageState extends State<GoalsPage> {
                                   decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
                                 ),
                               ),
-
                               IconButton(onPressed: onIncrease, icon: const Icon(Icons.add, size: 18, color: Colors.grey)),
                             ],
                           ),
@@ -270,7 +291,6 @@ class _GoalsPageState extends State<GoalsPage> {
     );
   }
 
-  // --- Header, Quote, SaveButton, BackgroundOrbs คง UI เดิมเป๊ะตามโค้ดต้นฉบับ ---
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 10, right: 20),

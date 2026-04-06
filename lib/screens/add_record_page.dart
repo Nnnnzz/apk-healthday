@@ -22,29 +22,29 @@ class _AddRecordPageState extends State<AddRecordPage> {
   String _selectedMood = 'none';
   final List<String> _moods = ['none', 'Happy 😊', 'Calm 😌', 'Tired 😫', 'Sad 😥'];
 
-  // ✅ เพิ่มตัวแปรสำหรับเก็บวันที่ปัจจุบัน
+  // ตัวแปรสำหรับเก็บวันที่ปัจจุบัน
   late DateTime _today;
   late String _displayDate;
   late String _dbFormattedDate;
 
+  // ✅ เพิ่มตัวแปรเช็คว่า "วันนี้รับพอยต์ของหมวดนี้ไปหรือยัง?"
+  bool _waterRewarded = false;
+  bool _sleepRewarded = false;
+
   @override
   void initState() {
     super.initState();
-    // ✅ กำหนดวันที่ปัจจุบันตอนเปิดหน้า
     _today = DateTime.now();
     
-    // รูปแบบโชว์บน UI (เช่น 05 Sep 2026)
     final List<String> months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     _displayDate = "${_today.day.toString().padLeft(2, '0')} ${months[_today.month - 1]} ${_today.year}";
     
-    // รูปแบบสำหรับบันทึกลง Database (YYYY-MM-DD)
     _dbFormattedDate = "${_today.year}-${_today.month.toString().padLeft(2, '0')}-${_today.day.toString().padLeft(2, '0')}";
     
-    // ✅ (Optional) ดึงข้อมูลของวันนี้มาโชว์ก่อนเผื่อเคยกรอกไว้แล้ว
     _loadExistingRecord();
   }
 
-  // ฟังก์ชันดึงข้อมูลเก่าของวันนี้มาแสดง (ถ้ามี)
+  // ฟังก์ชันดึงข้อมูลเก่าของวันนี้มาแสดง
   Future<void> _loadExistingRecord() async {
     try {
       final user = supabase.auth.currentUser;
@@ -63,6 +63,10 @@ class _AddRecordPageState extends State<AddRecordPage> {
           _sleepController.text = data['sleep_hours']?.toString() ?? "0";
           _selectedMood = data['mood'] ?? 'none';
           _detailController.text = data['detail_note'] ?? "";
+          
+          // ✅ ดึงสถานะการรับพอยต์มาเก็บไว้ด้วย
+          _waterRewarded = data['water_rewarded'] ?? false;
+          _sleepRewarded = data['sleep_rewarded'] ?? false;
         });
       }
     } catch (e) {
@@ -83,27 +87,65 @@ class _AddRecordPageState extends State<AddRecordPage> {
     return int.tryParse(controller.text) ?? 0;
   }
 
-  // ✅ ฟังก์ชันบันทึกข้อมูล (ใช้ Upsert เพื่อให้บันทึกซ้ำวันเดิมได้)
+  // ✅ ฟังก์ชันบันทึกข้อมูล พร้อมระบบแจกพอยต์
   Future<void> _saveRecord() async {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception('User not logged in');
 
-      // ✅ ใช้ .upsert() แทน .insert() เพื่อ Update ถ้ามีข้อมูลวันนี้อยู่แล้ว
+      int currentWater = _getValue(_waterController);
+      int currentSleep = _getValue(_sleepController);
+      int earnedPoints = 0; // เก็บแต้มที่จะได้ในรอบนี้
+
+      // 1. ดึงข้อมูล Goal ของ User คนนี้มาเทียบ
+      final goalData = await supabase.from('user_goals').select().eq('user_id', user.id).maybeSingle();
+      int targetWater = goalData?['target_water'] ?? 8;
+      int targetSleep = goalData?['target_sleep'] ?? 8;
+
+      // 2. เช็คว่าบรรลุเป้าหมายและยังไม่เคยได้แต้มใช่ไหม? (สมมติแจกภารกิจละ 20 แต้ม)
+      if (currentWater >= targetWater && !_waterRewarded) {
+        earnedPoints += 20; 
+        _waterRewarded = true; // ล็อคไว้ไม่ให้แจกซ้ำ
+      }
+      if (currentSleep >= targetSleep && !_sleepRewarded) {
+        earnedPoints += 20;
+        _sleepRewarded = true; // ล็อคไว้ไม่ให้แจกซ้ำ
+      }
+
+      // 3. ถ้ามีแต้มที่ได้เพิ่ม ให้อัปเดตลงตาราง users
+      if (earnedPoints > 0) {
+        final userData = await supabase.from('users').select('points').eq('user_id', user.id).single();
+        int currentPoints = userData['points'] ?? 0;
+        
+        await supabase.from('users').update({
+          'points': currentPoints + earnedPoints
+        }).eq('user_id', user.id);
+      }
+
+      // 4. บันทึกข้อมูลรายวันลงตาราง daily_records (รวมสถานะ rewarded ด้วย)
       await supabase.from('daily_records').upsert({
-        'user_id': user.id, // ต้องใส่ user_id ด้วยเพราะ Upsert ต้องการรู้ว่าอัปเดตของใคร
-        'record_date': _dbFormattedDate, // ใช้วันที่ปัจจุบันแบบ YYYY-MM-DD
-        'water_glasses': _getValue(_waterController),
-        'sleep_hours': _getValue(_sleepController),
+        'user_id': user.id,
+        'record_date': _dbFormattedDate,
+        'water_glasses': currentWater,
+        'sleep_hours': currentSleep,
         'mood': _selectedMood,
         'detail_note': _detailController.text,
-      }, onConflict: 'user_id, record_date'); // อ้างอิงจาก CONSTRAINT unique_daily_record ที่เราทำไว้ใน SQL
+        'water_rewarded': _waterRewarded, // ✅ เซฟสถานะการแจกแต้ม
+        'sleep_rewarded': _sleepRewarded, // ✅ เซฟสถานะการแจกแต้ม
+      }, onConflict: 'user_id, record_date');
 
       if (!mounted) return;
+      
+      // ✅ สร้างข้อความแจ้งเตือนให้ชื่นใจ ถ้าได้แต้ม!
+      String snackBarMsg = 'Saved Successfully! 🎉';
+      if (earnedPoints > 0) {
+        snackBarMsg = 'Saved! You earned $earnedPoints Points! ⭐';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Saved Successfully! 🎉'),
-          backgroundColor: Color(0xFF2D7D9A),
+        SnackBar(
+          content: Text(snackBarMsg, style: const TextStyle(fontFamily: 'Poppins-Medium', color: Colors.white)),
+          backgroundColor: const Color(0xFF2D7D9A),
         ),
       );
 
@@ -249,7 +291,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
     );
   }
 
-  // ✅ เปลี่ยน Header วันที่เป็นแบบล็อค (โชว์เฉพาะวันที่ปัจจุบัน)
   Widget _buildDateHeader() {
     return Container(
       width: double.infinity,
@@ -257,7 +298,7 @@ class _AddRecordPageState extends State<AddRecordPage> {
       decoration: const BoxDecoration(color: Color(0xFF2D7D9A)),
       child: Center(
         child: Text(
-          "Today, $_displayDate", // แสดงผลเช่น Today, 05 Sep 2026
+          "Today, $_displayDate", 
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,

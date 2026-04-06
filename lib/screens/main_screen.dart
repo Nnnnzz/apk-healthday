@@ -1,11 +1,14 @@
+import 'dart:async'; // 1. นำเข้า Async สำหรับใช้ Timer
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 2. นำเข้า SharedPreferences
+import 'package:supabase_flutter/supabase_flutter.dart'; // 3. นำเข้า Supabase
 import '../constants/app_colors.dart';
 import 'home_page.dart';
 import 'stats_page.dart';
 import 'calendar_page.dart';
 import 'setting_page.dart';
 import 'add_record_page.dart';
-
+import '../service/health_advice_service.dart'; // 4. นำเข้า HealthAdviceService สำหรับฟีเจอร์ Health Tips
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -15,6 +18,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  Timer? _waterTimer; // ตัวแปรเก็บเวลาสำหรับแจ้งเตือน
 
   // มี 4 หน้าตรงๆ ตาม Index 0, 1, 2, 3
   final List<Widget> _pages = [
@@ -25,11 +29,127 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   @override
+@override
+void initState() {
+  super.initState();
+  
+  // รอให้แอปโหลด UI เสร็จสักครู่แล้วค่อยเช็ค (ป้องกัน Pop-up เด้งแทรกตอนแอปกำลังโหลด)
+  Future.delayed(const Duration(seconds: 3), () {
+    if (mounted) {
+      HealthAdviceService.checkAndShowAdvice(context);
+    }
+  });
+}
+
+Future<void> _triggerHealthTip() async {
+  final prefs = await SharedPreferences.getInstance();
+  // เช็คสวิตช์เปิด/ปิดจากหน้า Setting
+  bool isAdviceOn = prefs.getBool('healthAdvice') ?? true;
+
+  if (isAdviceOn && mounted) {
+    await HealthAdviceService.checkAndShowAdvice(context);
+  }
+}
+
+  @override
+  void dispose() {
+    _waterTimer?.cancel(); // 5. ยกเลิกจับเวลาตอนปิดแอป ป้องกัน Error
+    super.dispose();
+  }
+
+  // ==================================================================
+  // SMART WATER REMINDER LOGIC (เวอร์ชั่นป้องกันการเตือนรัว 🛡️)
+  // ==================================================================
+  void _startSmartWaterReminder() {
+    Future.delayed(const Duration(seconds: 2), () {
+      _processSmartReminder(); 
+
+      // เช็คทุก 1 ชั่วโมงตามปกติ
+      _waterTimer = Timer.periodic(const Duration(hours: 1), (timer) async {
+        await _processSmartReminder();
+      });
+    });
+  }
+
+  Future<void> _processSmartReminder() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    
+    // 1. เช็คสวิตช์ใน Setting
+    bool isWaterReminderOn = prefs.getBool('waterReminder') ?? true;
+    if (!isWaterReminderOn) return;
+
+    // 2. เช็คเวลาปัจจุบัน (8:00 - 23:59)
+    int currentHour = DateTime.now().hour;
+    if (currentHour < 8 || currentHour >= 24) return;
+
+    // 💡 3. ระบบป้องกันการเตือนรัว (เช็คเวลาแจ้งเตือนล่าสุด)
+    // ดึงเวลาล่าสุดที่เคยแจ้งเตือนเก็บไว้ในเครื่อง
+    String? lastNotifiedStr = prefs.getString('last_water_notification_time');
+    if (lastNotifiedStr != null) {
+      DateTime lastNotified = DateTime.parse(lastNotifiedStr);
+      // ถ้ายังไม่ผ่านไป 1 ชั่วโมง (หรือเวลาที่คุณตั้งไว้ใน Timer) ให้หยุดทำงาน
+      if (DateTime.now().difference(lastNotified).inMinutes < 60) {
+        return; 
+      }
+    }
+
+    final supabase = Supabase.instance.client;
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final String todayDate = DateTime.now().toIso8601String().split('T')[0];
+
+      final responses = await Future.wait([
+        supabase.from('user_goals').select('target_water').eq('user_id', user.id).maybeSingle(),
+        supabase.from('daily_records').select('water_glasses').eq('user_id', user.id).eq('record_date', todayDate).maybeSingle(),
+      ]);
+
+      int targetWater = responses[0]?['target_water'] ?? 8; 
+      int currentWater = responses[1]?['water_glasses'] ?? 0; 
+
+      if (currentWater >= targetWater) return; 
+
+      // --- ผ่านเงื่อนไขทั้งหมด เตรียมแจ้งเตือน ---
+
+      String msg = "💧 It's time to drink water! ($currentWater/$targetWater glasses)";
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg, style: const TextStyle(fontFamily: 'Poppins-Medium', color: Colors.white)),
+            backgroundColor: const Color(0xFF2D7D9A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            margin: const EdgeInsets.only(bottom: 120, left: 20, right: 20),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+
+      // 4. บันทึกลงตาราง notifications 
+      await supabase.from('notifications').insert({
+        'user_id': user.id,
+        'message': msg,
+      });
+
+      // 💡 5. บันทึกเวลาที่แจ้งเตือนสำเร็จลงในเครื่อง
+      await prefs.setString('last_water_notification_time', DateTime.now().toIso8601String());
+
+    } catch (e) {
+      debugPrint('Error Smart Reminder: $e');
+    }
+  }
+
+  
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
       body: IndexedStack(
-        index: _currentIndex, // ✅ แก้ไข: ใช้ค่า Index ตรงๆ ไปเลย ไม่ต้องลบเลขแล้ว
+        index: _currentIndex,
         children: _pages,
       ),
       bottomNavigationBar: Container(
@@ -63,7 +183,6 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildCustomNavItem(String iconPath, String label, int index) {
-    // ✅ แก้ไข: เช็คการเลือกแบบตรงไปตรงมา
     bool isSelected = _currentIndex == index;
 
     final Color selectedColor = AppColors.primaryBlueGradient.colors.last;

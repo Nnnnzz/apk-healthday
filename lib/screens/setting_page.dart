@@ -1,12 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // นำเข้า Supabase
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_colors.dart';
 import '../screens/main_screen.dart';
 import '../screens/personal_info_screen.dart';
 import '../screens/goal_page.dart';
-import '../screens/login_screen.dart'; // นำเข้าหน้า Login
+import '../screens/login_screen.dart'; 
 import '../widgets/background_wrapper.dart';
 
 class SettingPage extends StatefulWidget {
@@ -20,6 +21,37 @@ class _SettingPageState extends State<SettingPage> {
   // สถานะของ Switch
   bool _waterReminder = true;
   bool _healthAdvice = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings(); 
+  }
+
+  // ดึงค่าจาก SharedPreferences
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _waterReminder = prefs.getBool('waterReminder') ?? true;
+      // ✅ ใช้คีย์ 'health_advice_enabled' ให้ตรงกับใน HealthAdviceService
+      _healthAdvice = prefs.getBool('health_advice_enabled') ?? true;
+    });
+  }
+
+  // เซฟค่า Water Reminder
+  Future<void> _toggleWaterReminder(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('waterReminder', value);
+    setState(() => _waterReminder = value);
+  }
+
+  // ✅ เซฟค่า Health Advice
+  Future<void> _toggleHealthAdvice(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    // ✅ อัปเดตคีย์ 'health_advice_enabled' เพื่อให้ระบบ Service รับรู้
+    await prefs.setBool('health_advice_enabled', value);
+    setState(() => _healthAdvice = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,14 +103,14 @@ class _SettingPageState extends State<SettingPage> {
                       title: "Water Reminder",
                       isSwitch: true,
                       switchValue: _waterReminder,
-                      onChanged: (val) => setState(() => _waterReminder = val),
+                      onChanged: (val) => _toggleWaterReminder(val), 
                     ),
                     _buildSettingItem(
                       iconPath: 'assets/icons/health_notification_icon.png',
                       title: "Health Advice",
                       isSwitch: true,
                       switchValue: _healthAdvice,
-                      onChanged: (val) => setState(() => _healthAdvice = val),
+                      onChanged: (val) => _toggleHealthAdvice(val), // ✅ เรียกใช้งานฟังก์ชันที่แก้ใหม่
                     ),
                     const SizedBox(height: 25),
 
@@ -89,7 +121,6 @@ class _SettingPageState extends State<SettingPage> {
                       title: "Log Out",
                       isLogout: true,
                       onTap: () {
-                        // โชว์ Dialog ถามยืนยันก่อนออกจากระบบ
                         showDialog(
                           context: context,
                           builder: (context) => AlertDialog(
@@ -103,11 +134,9 @@ class _SettingPageState extends State<SettingPage> {
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  // สั่ง Sign Out ออกจาก Supabase
                                   await Supabase.instance.client.auth.signOut();
                                   if (!context.mounted) return;
                                   
-                                  // ล้าง Stack และพาไปหน้า Login
                                   Navigator.pushAndRemoveUntil(
                                     context,
                                     MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -121,7 +150,7 @@ class _SettingPageState extends State<SettingPage> {
                         );
                       },
                     ),
-                    const SizedBox(height: 100), // เผื่อระยะ Bottom Nav
+                    const SizedBox(height: 100), 
                   ],
                 ),
               ),

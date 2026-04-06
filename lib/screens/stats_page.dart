@@ -1,5 +1,6 @@
 import 'dart:ui'; 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 1. นำเข้า Supabase
 import 'package:healthday_application/screens/main_screen.dart';
 import '../constants/app_colors.dart';
 
@@ -11,7 +12,100 @@ class StatsPage extends StatefulWidget {
 }
 
 class _StatsPageState extends State<StatsPage> {
+  final supabase = Supabase.instance.client;
+  
   bool isWeeksSelected = true;
+  bool _isLoading = true;
+
+  // ตัวแปรเก็บผลรวมสถิติ
+  int _totalSteps = 0;
+  int _totalWater = 0;
+  int _totalSleep = 0;
+  String _topMood = "No data";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchStats(); // ดึงข้อมูลครั้งแรกเมื่อเปิดหน้า
+  }
+
+  // ฟังก์ชันดึงและคำนวณสถิติ
+  Future<void> _fetchStats() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      DateTime now = DateTime.now();
+      DateTime startDate;
+
+      if (isWeeksSelected) {
+        // หา "วันจันทร์" ของสัปดาห์นี้
+        int daysToSubtract = now.weekday - 1;
+        startDate = now.subtract(Duration(days: daysToSubtract));
+      } else {
+        // หา "วันที่ 1" ของเดือนนี้
+        startDate = DateTime(now.year, now.month, 1);
+      }
+
+      // แปลงวันที่ให้อยู่ในฟอร์แมต YYYY-MM-DD
+      String startStr = startDate.toIso8601String().split('T')[0];
+      String endStr = now.toIso8601String().split('T')[0];
+
+      // ดึงข้อมูลจากฐานข้อมูลในช่วงเวลาที่กำหนด
+      final data = await supabase
+          .from('daily_records')
+          .select()
+          .eq('user_id', user.id)
+          .gte('record_date', startStr)
+          .lte('record_date', endStr);
+
+      int tempSteps = 0;
+      int tempWater = 0;
+      int tempSleep = 0;
+      Map<String, int> moodCounts = {};
+
+      // วนลูปบวกรวมข้อมูลทั้งหมด
+      for (var record in data) {
+        tempSteps += (record['steps'] as int?) ?? 0;
+        tempWater += (record['water_glasses'] as int?) ?? 0;
+        tempSleep += (record['sleep_hours'] as int?) ?? 0;
+
+        String mood = record['mood'] as String? ?? 'none';
+        if (mood != 'none' && mood.isNotEmpty) {
+          moodCounts[mood] = (moodCounts[mood] ?? 0) + 1;
+        }
+      }
+
+      // หา Mood ที่เจอบ่อยที่สุด
+      String bestMood = "No data";
+      if (moodCounts.isNotEmpty) {
+        var sortedMoods = moodCounts.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        bestMood = sortedMoods.first.key;
+        bestMood = bestMood[0].toUpperCase() + bestMood.substring(1); // ตัวพิมพ์ใหญ่ตัวแรก
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalSteps = tempSteps;
+          _totalWater = tempWater;
+          _totalSleep = tempSleep;
+          _topMood = bestMood;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching stats: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ฟังก์ชันช่วยใส่ลูกน้ำให้ตัวเลข (เช่น 10000 -> 10,000)
+  String _formatNumber(int number) {
+    RegExp reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
+    String mathFunc(Match match) => '${match[1]},';
+    return number.toString().replaceAllMapped(reg, mathFunc);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,16 +130,18 @@ class _StatsPageState extends State<StatsPage> {
 
                 // รายการการ์ดสถิติ (Glassmorphism Cards)
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    children: [
-                      _buildGlassCard("Steps", isWeeksSelected ? "100,000 steps" : "450,000 steps", AppColors.stepsGradient, 'assets/icons/activity_icon.png'),
-                      _buildGlassCard("Water", isWeeksSelected ? "200 glasses" : "900 glasses", AppColors.waterGradient, 'assets/icons/water_icon.png'),
-                      _buildGlassCard("Sleep", isWeeksSelected ? "250 hours" : "1,100 hours", AppColors.sleepGradient, 'assets/icons/sleep_icon.png'),
-                      _buildGlassCard("Mood", "Good", AppColors.moodGradient, 'assets/icons/mood_icon.png'),
-                      const SizedBox(height: 100), // ระยะเผื่อ Bottom Navigation
-                    ],
-                  ),
+                  child: _isLoading 
+                    ? Center(child: CircularProgressIndicator(color: AppColors.primaryOrangeGradient.colors.first))
+                    : ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        children: [
+                          _buildGlassCard("Steps", "${_formatNumber(_totalSteps)} steps", AppColors.stepsGradient, 'assets/icons/activity_icon.png'),
+                          _buildGlassCard("Water", "${_formatNumber(_totalWater)} glasses", AppColors.waterGradient, 'assets/icons/water_icon.png'),
+                          _buildGlassCard("Sleep", "${_formatNumber(_totalSleep)} hours", AppColors.sleepGradient, 'assets/icons/sleep_icon.png'),
+                          _buildGlassCard("Top Mood", _topMood, AppColors.moodGradient, 'assets/icons/mood_icon.png'),
+                          const SizedBox(height: 100), // ระยะเผื่อ Bottom Navigation
+                        ],
+                      ),
                 ),
               ],
             ),
@@ -54,7 +150,10 @@ class _StatsPageState extends State<StatsPage> {
       ),
     );
   }
-  // HELPER WIDGETS (ฟังก์ชันตัวช่วยเพื่อลดความยาวโค้ด)
+
+  // ==========================================================
+  // HELPER WIDGETS
+  // ==========================================================
   Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
     return ShaderMask(
       blendMode: BlendMode.srcIn,
@@ -78,14 +177,13 @@ class _StatsPageState extends State<StatsPage> {
       ),
     );
   }
-  // MAIN COMPONENTS (ชิ้นส่วนหลักของหน้าจอ)
+
   Widget _buildGlassCard(String title, String value, LinearGradient gradient, String iconPath) {
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
       height: 125,
       child: Stack(
         children: [
-          // ชั้นล่าง: แผ่นกระจกฝ้าและข้อความ
           ClipRRect(
             borderRadius: BorderRadius.circular(25),
             child: BackdropFilter(
@@ -99,7 +197,7 @@ class _StatsPageState extends State<StatsPage> {
                 ),
                 child: Row(
                   children: [
-                    const SizedBox(width: 75), // เว้นที่ให้ไอคอน (55 + 20)
+                    const SizedBox(width: 75), // เว้นที่ให้ไอคอน
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -116,7 +214,6 @@ class _StatsPageState extends State<StatsPage> {
               ),
             ),
           ),
-          // ชั้นบน: วงกลมไอคอน
           Positioned(
             left: 20, top: 0, bottom: 0,
             child: Center(
@@ -152,7 +249,7 @@ class _StatsPageState extends State<StatsPage> {
           const Expanded(
             child: Center(child: Text("Stats", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.greyText))),
           ),
-          const SizedBox(width: 60), // สำหรับบาลานซ์ให้คำว่า Stats อยู่ตรงกลางเป๊ะๆ
+          const SizedBox(width: 60), 
         ],
       ),
     );
@@ -165,7 +262,6 @@ class _StatsPageState extends State<StatsPage> {
       decoration: BoxDecoration(color: const Color(0xFFFFA726), borderRadius: BorderRadius.circular(30)),
       child: Stack(
         children: [
-          // 1. ตัว Slider เลื่อนสลับซ้ายขวา
           AnimatedAlign(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
@@ -181,19 +277,34 @@ class _StatsPageState extends State<StatsPage> {
               ),
             ),
           ),
-          // 2. ตัวอักษร (Weeks / Months)
           Row(
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => setState(() => isWeeksSelected = true),
+                  onTap: () {
+                    if (!isWeeksSelected) {
+                      setState(() {
+                        isWeeksSelected = true;
+                        _isLoading = true;
+                      });
+                      _fetchStats(); // อัปเดตข้อมูลเมื่อเปลี่ยนแท็บ
+                    }
+                  },
                   behavior: HitTestBehavior.opaque,
                   child: Center(child: Text("Weeks", style: TextStyle(color: isWeeksSelected ? const Color(0xFF2D7D9A) : Colors.white, fontFamily: 'Poppins-Medium', fontSize: 20))),
                 ),
               ),
               Expanded(
                 child: GestureDetector(
-                  onTap: () => setState(() => isWeeksSelected = false),
+                  onTap: () {
+                    if (isWeeksSelected) {
+                      setState(() {
+                        isWeeksSelected = false;
+                        _isLoading = true;
+                      });
+                      _fetchStats(); // อัปเดตข้อมูลเมื่อเปลี่ยนแท็บ
+                    }
+                  },
                   behavior: HitTestBehavior.opaque,
                   child: Center(child: Text("Months", style: TextStyle(color: !isWeeksSelected ? const Color(0xFF2D7D9A) : Colors.white, fontFamily: 'Poppins-Medium', fontSize: 20))),
                 ),
