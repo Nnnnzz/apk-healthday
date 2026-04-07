@@ -71,6 +71,7 @@ class _PointPageState extends State<PointPage> {
         int sleep = recordData['sleep_hours'] ?? 0;
         String mood = recordData['mood'] ?? 'none';
 
+        // ดึงสถานะโบนัส
         bool stepRewarded = recordData['step_rewarded'] ?? false;
         bool waterRewarded = recordData['water_rewarded'] ?? false;
         bool sleepRewarded = recordData['sleep_rewarded'] ?? false;
@@ -79,6 +80,8 @@ class _PointPageState extends State<PointPage> {
         if (steps > 0) {
           int stepPoints = (steps ~/ 1000) * 10;
           if (stepRewarded) stepPoints += 100;
+          int stepPoints = (steps ~/ 1000) * 10; // แต้มรายหน่วย
+          if (stepRewarded) stepPoints += 100; // บวกโบนัสเป้าหมาย
           newEvents.add({
             'type': 'steps',
             'label': 'Steps:',
@@ -218,7 +221,11 @@ class _PointPageState extends State<PointPage> {
                 if (_isLoading)
                   const Padding(
                     padding: EdgeInsets.only(top: 100),
-                    child: Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A))),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF2D7D9A),
+                      ),
+                    ),
                   )
                 else ...[
                   _buildPointsCard(),
@@ -279,7 +286,9 @@ class _PointPageState extends State<PointPage> {
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 30),
-                decoration: const BoxDecoration(gradient: AppColors.primaryOrangeGradient),
+                decoration: const BoxDecoration(
+                  gradient: AppColors.primaryOrangeGradient,
+                ),
                 child: Center(
                   child: Text(
                     '$_totalPoints Pts',
@@ -301,7 +310,13 @@ class _PointPageState extends State<PointPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(25),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(22),
@@ -315,20 +330,35 @@ class _PointPageState extends State<PointPage> {
                   children: [
                     Text(
                       "${_selectedDate.day} ${_getMonthName(_selectedDate.month)} ${_selectedDate.year}",
-                      style: const TextStyle(fontSize: 18, fontFamily: 'Poppins-Medium', color: Color(0xFF2D7D9A)),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontFamily: 'Poppins-Medium',
+                        color: Color(0xFF2D7D9A),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () => _selectDate(context),
-                      child: Icon(Icons.calendar_month_rounded, size: 20, color: AppColors.primaryBlueGradient.colors.first.withOpacity(0.6)),
+                      child: Icon(
+                        Icons.calendar_month_rounded,
+                        size: 20,
+                        color: AppColors.primaryBlueGradient.colors.first
+                            .withOpacity(0.6),
+                      ),
                     ),
                   ],
                 ),
                 Row(
                   children: [
-                    _buildNavButton(Icons.arrow_back_ios_rounded, () => _changeDate(-1)),
+                    _buildNavButton(
+                      Icons.arrow_back_ios_rounded,
+                      () => _changeDate(-1),
+                    ),
                     const SizedBox(width: 15),
-                    _buildNavButton(Icons.arrow_forward_ios_rounded, () => _changeDate(1)),
+                    _buildNavButton(
+                      Icons.arrow_forward_ios_rounded,
+                      () => _changeDate(1),
+                    ),
                   ],
                 ),
               ],
@@ -351,10 +381,13 @@ class _PointPageState extends State<PointPage> {
         children: [
           Image.asset(theme.iconPath, width: 24, height: 24, fit: BoxFit.contain, errorBuilder: (c, e, s) => Icon(Icons.check_circle_outline, color: theme.gradient.colors.first, size: 24)),
           const SizedBox(width: 15),
+          
+          // ส่วนเนื้อหา (หัวข้อ และ จำนวน อยู่บรรทัดเดียวกัน)
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // หัวข้อ (เช่น Steps:, Waters:)
                 ShaderMask(
                   blendMode: BlendMode.srcIn,
                   shaderCallback: (bounds) => theme.gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
@@ -367,6 +400,8 @@ class _PointPageState extends State<PointPage> {
               ],
             ),
           ),
+
+          // คะแนนที่ได้รับ (+Pts)
           if (points != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -400,7 +435,14 @@ class _PointPageState extends State<PointPage> {
           children: [
             Icon(Icons.history_rounded, color: Colors.grey, size: 40),
             SizedBox(height: 10),
-            Text("No activity recorded", style: TextStyle(color: Colors.grey, fontSize: 14, fontFamily: 'Poppins-Medium')),
+            Text(
+              "No activity recorded",
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 14,
+                fontFamily: 'Poppins-Medium',
+              ),
+            ),
           ],
         ),
       ),
