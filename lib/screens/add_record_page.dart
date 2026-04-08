@@ -26,13 +26,11 @@ class _AddRecordPageState extends State<AddRecordPage> {
   late String _displayDate;
   late String _dbFormattedDate;
 
-  // ✅ ตัวแปรเช็คสถานะการรับโบนัสเป้าหมาย (Goal Bonus)
   bool _waterRewarded = false;
   bool _sleepRewarded = false;
   bool _moodRewarded = false;
   bool _stepRewarded = false;
 
-  // ✅ ตัวแปรเก็บค่าเดิมเพื่อคำนวณคะแนนรายหน่วย (Unit Score)
   int _oldWater = 0;
   int _oldSleep = 0;
   int _oldSteps = 0;
@@ -67,7 +65,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
           _selectedMood = data['mood'] ?? 'none';
           _detailController.text = data['detail_note'] ?? "";
 
-          // ✅ เก็บค่าเดิมไว้คำนวณส่วนต่างคะแนน
           _oldWater = data['water_glasses'] ?? 0;
           _oldSleep = data['sleep_hours'] ?? 0;
           _oldSteps = data['steps'] ?? 0;
@@ -93,21 +90,31 @@ class _AddRecordPageState extends State<AddRecordPage> {
 
   int _getValue(TextEditingController controller) => int.tryParse(controller.text) ?? 0;
 
-  // ✅ ฟังก์ชันบันทึกข้อมูล พร้อมระบบแจกพอยต์แบบละเอียด
-  // ✅ ฟังก์ชันบันทึกข้อมูล พร้อมระบบแจก/หักพอยต์ตามจริง (ป้องกันการโกง)
+  // ✅ แก้ไขฟังก์ชันบันทึก: เพิ่มการตรวจสอบเงื่อนไขห้ามเกิน 12
   Future<void> _saveRecord() async {
     if (_isLoading) return;
+
+    int newWater = _getValue(_waterController);
+    int newSleep = _getValue(_sleepController);
+
+    // 🛑 [Anti-Cheat Logic]
+    if (newWater > 12) {
+      _showError("ห้ามบันทึกน้ำเกิน 12 แก้วต่อวัน");
+      return;
+    }
+    if (newSleep > 12) {
+      _showError("ห้ามบันทึกเวลานอนเกิน 12 ชั่วโมงต่อวัน");
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception('User not logged in');
 
-      int newWater = _getValue(_waterController);
-      int newSleep = _getValue(_sleepController);
-      int earnedPoints = 0; // แต้มสุทธิที่จะบวกหรือลบในรอบนี้
+      int earnedPoints = 0;
 
-      // 1. ดึงข้อมูล Goal และ Record ปัจจุบัน
       final responses = await Future.wait([
         supabase.from('user_goals').select().eq('user_id', user.id).maybeSingle(),
         supabase.from('daily_records').select('steps').eq('user_id', user.id).eq('record_date', _dbFormattedDate).maybeSingle(),
@@ -121,28 +128,21 @@ class _AddRecordPageState extends State<AddRecordPage> {
       int targetSteps = goalData?['target_steps'] ?? 8000;
       int currentSteps = recordData?['steps'] ?? 0;
 
-      // --- 🏆 ส่วนที่ 1: คะแนนรายหน่วย (คำนวณส่วนต่าง +/-) ---
-      // ถ้าน้ำลดลง (new < old) earnedPoints จะติดลบ ซึ่งจะไปหักออกจากคะแนนรวม
       earnedPoints += (newWater - _oldWater) * 5; 
       earnedPoints += (newSleep - _oldSleep) * 10;
 
-      // ทุก 1,000 ก้าว (คำนวณส่วนต่างกลุ่มก้าว)
       int oldThousandGroup = _oldSteps ~/ 1000;
       int newThousandGroup = currentSteps ~/ 1000;
       earnedPoints += (newThousandGroup - oldThousandGroup) * 10;
 
-      // --- 🏅 ส่วนที่ 2: คะแนนโบนัสเป้าหมาย (แจกเพิ่ม หรือ หักคืน) ---
-      
-      // กฎของน้ำ
       if (newWater >= targetWater && !_waterRewarded) {
-        earnedPoints += 50; // บรรลุเป้า: แจกโบนัส
+        earnedPoints += 50;
         _waterRewarded = true;
       } else if (newWater < targetWater && _waterRewarded) {
-        earnedPoints -= 50; // ต่ำกว่าเป้า: หักโบนัสคืน
+        earnedPoints -= 50;
         _waterRewarded = false;
       }
 
-      // กฎของการนอน
       if (newSleep >= targetSleep && !_sleepRewarded) {
         earnedPoints += 50;
         _sleepRewarded = true;
@@ -151,7 +151,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
         _sleepRewarded = false;
       }
 
-      // กฎของอารมณ์ (ให้ครั้งแรกที่เลือก และจะไม่หักคืนถ้าเปลี่ยนอารมณ์ไปมา ยกเว้นเปลี่ยนกลับเป็น none)
       if (_selectedMood != 'none' && !_moodRewarded) {
         earnedPoints += 20;
         _moodRewarded = true;
@@ -160,7 +159,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
         _moodRewarded = false;
       }
 
-      // กฎของก้าวเดิน (หักคืนถ้าค่า steps ลดลงต่ำกว่าเป้า - กรณีมีการลบข้อมูลก้าว)
       if (currentSteps >= targetSteps && !_stepRewarded) {
         earnedPoints += 100;
         _stepRewarded = true;
@@ -169,19 +167,15 @@ class _AddRecordPageState extends State<AddRecordPage> {
         _stepRewarded = false;
       }
 
-      // 3. อัปเดตพอยต์รวมในตาราง users (หักหรือบวกตามค่า earnedPoints)
       if (earnedPoints != 0) {
         final userData = await supabase.from('users').select('points').eq('user_id', user.id).single();
         int currentTotal = userData['points'] ?? 0;
-        
-        // ป้องกันไม่ให้แต้มรวมติดลบ (ถ้าต้องการ)
         int finalPoints = currentTotal + earnedPoints;
         if (finalPoints < 0) finalPoints = 0;
 
         await supabase.from('users').update({'points': finalPoints}).eq('user_id', user.id);
       }
 
-      // 4. บันทึกข้อมูลกลับไปยัง Database
       await supabase.from('daily_records').upsert({
         'user_id': user.id,
         'record_date': _dbFormattedDate,
@@ -197,7 +191,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
 
       if (!mounted) return;
       
-      // แสดงข้อความตามผลลัพธ์
       String msg = earnedPoints >= 0 ? 'Saved! +$earnedPoints Pts ⭐' : 'Saved! $earnedPoints Pts 📉';
       if (earnedPoints == 0) msg = 'Saved Successfully! 🎉';
 
@@ -207,10 +200,16 @@ class _AddRecordPageState extends State<AddRecordPage> {
       
       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const MainScreen()), (route) => false);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      if (mounted) _showError('Error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+    );
   }
   
   @override
@@ -218,7 +217,20 @@ class _AddRecordPageState extends State<AddRecordPage> {
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       body: Stack(
-        children: [_buildBackgroundOrbs(), SafeArea(child: Column(children: [const SizedBox(height: 10), _buildHeader(context), _buildBigHeartIcon(), Expanded(child: SingleChildScrollView(padding: const EdgeInsets.symmetric(horizontal: 25), child: Column(children: [_buildMainRecordCard(), const SizedBox(height: 30), _isLoading ? const CircularProgressIndicator() : _buildActionButtons(context), const SizedBox(height: 40)])))]))],
+        children: [
+          _buildBackgroundOrbs(), 
+          SafeArea(child: Column(children: [
+            const SizedBox(height: 10), 
+            _buildHeader(context), 
+            _buildBigHeartIcon(), 
+            Expanded(child: SingleChildScrollView(padding: const EdgeInsets.symmetric(horizontal: 25), child: Column(children: [
+              _buildMainRecordCard(), 
+              const SizedBox(height: 30), 
+              _isLoading ? const CircularProgressIndicator() : _buildActionButtons(context), 
+              const SizedBox(height: 40)
+            ])))
+          ]))
+        ],
       ),
     );
   }
@@ -243,7 +255,18 @@ class _AddRecordPageState extends State<AddRecordPage> {
         borderRadius: BorderRadius.circular(20),
         child: Stack(children: [
           Positioned.fill(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8), child: Container(color: Colors.white.withOpacity(0.1)))),
-          Column(children: [_buildDateHeader(), Padding(padding: const EdgeInsets.all(18), child: Column(children: [_buildWaterActivity(), const SizedBox(height: 15), _buildSleepActivity(), const SizedBox(height: 15), _buildMoodActivity(), const SizedBox(height: 20), _buildDetailActivity()]))])
+          Column(children: [
+            _buildDateHeader(), 
+            Padding(padding: const EdgeInsets.all(18), child: Column(children: [
+              _buildWaterActivity(), 
+              const SizedBox(height: 15), 
+              _buildSleepActivity(), 
+              const SizedBox(height: 15), 
+              _buildMoodActivity(), 
+              const SizedBox(height: 20), 
+              _buildDetailActivity()
+            ]))
+          ])
         ]),
       ),
     );
@@ -253,12 +276,41 @@ class _AddRecordPageState extends State<AddRecordPage> {
     return Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12), decoration: const BoxDecoration(color: Color(0xFF2D7D9A)), child: Center(child: Text("Today, $_displayDate", style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Poppins-SemiBold', letterSpacing: 1.2))));
   }
 
+  // ✅ แก้ไขปุ่มกดใน Row: เช็คไม่ให้เกิน 12 ก่อนเพิ่มค่า
   Widget _buildWaterActivity() {
-    return _buildHybridInputFieldRow(iconPath: 'assets/icons/water2_icon.png', title: "Water", gradient: AppColors.waterGradient, controller: _waterController, unit: "glasses", onDecrease: () => setState(() => _waterController.text = "${_getValue(_waterController) > 0 ? _getValue(_waterController) - 1 : 0}"), onIncrease: () => setState(() => _waterController.text = "${_getValue(_waterController) + 1}"));
+    return _buildHybridInputFieldRow(
+      iconPath: 'assets/icons/water2_icon.png', 
+      title: "Water", 
+      gradient: AppColors.waterGradient, 
+      controller: _waterController, 
+      unit: "glasses", 
+      onDecrease: () => setState(() => _waterController.text = "${_getValue(_waterController) > 0 ? _getValue(_waterController) - 1 : 0}"), 
+      onIncrease: () {
+        if (_getValue(_waterController) < 12) {
+          setState(() => _waterController.text = "${_getValue(_waterController) + 1}");
+        } else {
+          _showError("น้ำสูงสุด 12 แก้วต่อวัน");
+        }
+      }
+    );
   }
 
   Widget _buildSleepActivity() {
-    return _buildHybridInputFieldRow(iconPath: 'assets/icons/sleep2_icon.png', title: "Sleep", gradient: AppColors.sleepGradient, controller: _sleepController, unit: "hours", onDecrease: () => setState(() => _sleepController.text = "${_getValue(_sleepController) > 0 ? _getValue(_sleepController) - 1 : 0}"), onIncrease: () => setState(() => _sleepController.text = "${_getValue(_sleepController) + 1}"));
+    return _buildHybridInputFieldRow(
+      iconPath: 'assets/icons/sleep2_icon.png', 
+      title: "Sleep", 
+      gradient: AppColors.sleepGradient, 
+      controller: _sleepController, 
+      unit: "hours", 
+      onDecrease: () => setState(() => _sleepController.text = "${_getValue(_sleepController) > 0 ? _getValue(_sleepController) - 1 : 0}"), 
+      onIncrease: () {
+        if (_getValue(_sleepController) < 12) {
+          setState(() => _sleepController.text = "${_getValue(_sleepController) + 1}");
+        } else {
+          _showError("เวลานอนสูงสุด 12 ชั่วโมงต่อวัน");
+        }
+      }
+    );
   }
 
   Widget _buildMoodActivity() {

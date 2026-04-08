@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as p;
 import '../constants/app_colors.dart';
+import 'package:flutter/foundation.dart';
 
 class PersonalInfoPage extends StatefulWidget {
   const PersonalInfoPage({super.key});
@@ -154,46 +155,55 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
 
   // 4. ฟังก์ชันอัปโหลดและบันทึก
   Future<void> _saveData() async {
-    setState(() => _isSaving = true);
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
+  setState(() => _isSaving = true);
+  try {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
 
-      String? finalImageUrl = _currentImageUrl;
+    String? finalImageUrl = _currentImageUrl;
 
-      if (_imageFile != null) {
-        final fileExt = p.extension(_imageFile!.path);
-        final fileName = '${user.id}_${DateTime.now().millisecondsSinceEpoch}$fileExt';
+    if (_imageFile != null) {
+      // ✅ แก้ปัญหา _Namespace error โดยการอ่านไฟล์เป็น Bytes ก่อนอัปโหลด
+      final fileBytes = await _imageFile!.readAsBytes();
+      final fileExt = p.extension(_imageFile!.path);
+      final fileName = '${user.id}_${DateTime.now().millisecondsSinceEpoch}$fileExt';
 
-        await supabase.storage.from('profiles').upload(
-          fileName,
-          _imageFile!,
-          fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-        );
+      // ✅ ใช้ uploadBinary แทนการส่งไฟล์ตรงๆ
+      await supabase.storage.from('profiles').uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
 
-        finalImageUrl = supabase.storage.from('profiles').getPublicUrl(fileName);
-      }
-
-      await supabase.from('users').update({
-        'first_name': _firstNameController.text.trim(),
-        'last_name': _lastNameController.text.trim(),
-        'weight_kg': double.tryParse(_weightController.text),
-        'height_cm': double.tryParse(_heightController.text),
-        'profile_image_url': finalImageUrl,
-      }).eq('user_id', user.id);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profile updated successfully! 🎉")),
-        );
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      debugPrint("Error saving data: $e");
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      finalImageUrl = supabase.storage.from('profiles').getPublicUrl(fileName);
     }
+
+    // อัปเดตข้อมูลลงตาราง users
+    await supabase.from('users').update({
+      'first_name': _firstNameController.text.trim(),
+      'last_name': _lastNameController.text.trim(),
+      'weight_kg': double.tryParse(_weightController.text),
+      'height_cm': double.tryParse(_heightController.text),
+      'profile_image_url': finalImageUrl,
+    }).eq('user_id', user.id);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Profile updated successfully! 🎉")),
+      );
+      Navigator.pop(context);
+    }
+  } catch (e) {
+    debugPrint("Error saving data: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+      );
+    }
+  } finally {
+    if (mounted) setState(() => _isSaving = false);
   }
+}
 
   @override
   void dispose() {

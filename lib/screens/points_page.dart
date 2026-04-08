@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_colors.dart';
 import '../screens/main_screen.dart';
 import 'rewards_page.dart';
-import 'add_record_page.dart'; // อย่าลืมนำเข้าหน้า AddRecord
+import 'add_record_page.dart';
 
 class PointPage extends StatefulWidget {
   const PointPage({super.key});
@@ -16,7 +16,9 @@ class PointPage extends StatefulWidget {
 class _PointPageState extends State<PointPage> {
   final supabase = Supabase.instance.client;
 
-  bool _isLoading = true;
+  // --- States ---
+  bool _isInitialLoading = true; 
+  bool _isSilentLoading = false; 
   int _totalPoints = 0;
   List<Map<String, dynamic>> _dayEvents = [];
   DateTime _selectedDate = DateTime.now();
@@ -24,23 +26,21 @@ class _PointPageState extends State<PointPage> {
   @override
   void initState() {
     super.initState();
-    _fetchPointsData(_selectedDate);
+    _fetchPointsData(_selectedDate, isInitial: true);
   }
 
-  // ✅ เพิ่มฟังก์ชันนำทางไปยัง Index ที่ต้องการใน MainScreen
-  void _navigateToIndex(int index) {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MainScreen(initialIndex: index),
-      ),
-      (route) => false,
-    );
-  }
-
-  Future<void> _fetchPointsData(DateTime date) async {
+  // ✅ ฟังก์ชันดึงข้อมูล (ปรับปรุง Logic ป้องกันการปั๊มแต้ม)
+  Future<void> _fetchPointsData(DateTime date, {bool isInitial = false}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+
+    setState(() {
+      if (isInitial) {
+        _isInitialLoading = true;
+      } else {
+        _isSilentLoading = true;
+      }
+    });
+
     try {
       final user = supabase.auth.currentUser;
       if (user == null) return;
@@ -48,17 +48,8 @@ class _PointPageState extends State<PointPage> {
       final String formattedDate = date.toIso8601String().split('T')[0];
 
       final responses = await Future.wait([
-        supabase
-            .from('users')
-            .select('points')
-            .eq('user_id', user.id)
-            .maybeSingle(),
-        supabase
-            .from('daily_records')
-            .select()
-            .eq('user_id', user.id)
-            .eq('record_date', formattedDate)
-            .maybeSingle(),
+        supabase.from('users').select('points').eq('user_id', user.id).maybeSingle(),
+        supabase.from('daily_records').select().eq('user_id', user.id).eq('record_date', formattedDate).maybeSingle(),
       ]);
 
       int fetchedTotalPoints = responses[0]?['points'] ?? 0;
@@ -71,17 +62,15 @@ class _PointPageState extends State<PointPage> {
         int sleep = recordData['sleep_hours'] ?? 0;
         String mood = recordData['mood'] ?? 'none';
 
-        // ดึงสถานะโบนัส
         bool stepRewarded = recordData['step_rewarded'] ?? false;
         bool waterRewarded = recordData['water_rewarded'] ?? false;
         bool sleepRewarded = recordData['sleep_rewarded'] ?? false;
         bool moodRewarded = recordData['mood_rewarded'] ?? false;
 
+        // --- คำนวณแต้ม Steps (แสดงตามจริง แต่แต้มโบนัสคุมด้วยระบบหลังบ้านอยู่แล้ว) ---
         if (steps > 0) {
           int stepPoints = (steps ~/ 1000) * 10;
           if (stepRewarded) stepPoints += 100;
-          int stepPoints = (steps ~/ 1000) * 10; // แต้มรายหน่วย
-          if (stepRewarded) stepPoints += 100; // บวกโบนัสเป้าหมาย
           newEvents.add({
             'type': 'steps',
             'label': 'Steps:',
@@ -90,28 +79,40 @@ class _PointPageState extends State<PointPage> {
             'points': stepPoints > 0 ? stepPoints : null,
           });
         }
+
+        // --- คำนวณแต้ม Water (จำกัดแต้มที่สูงสุด 12 แก้ว) ---
         if (water > 0) {
-          int waterPoints = water * 5;
+          // ✅ ป้องกันการโกง: คำนวณแต้มจากค่าที่ไม่เกิน 12
+          int effectiveWater = water > 12 ? 12 : water; 
+          int waterPoints = effectiveWater * 5;
           if (waterRewarded) waterPoints += 50;
+          
           newEvents.add({
             'type': 'water',
             'label': 'Waters:',
-            'value': '$water',
+            'value': '$water', // แสดงค่าจริงที่บันทึก
             'unit': 'glasses',
             'points': waterPoints > 0 ? waterPoints : null,
           });
         }
+
+        // --- คำนวณแต้ม Sleep (จำกัดแต้มที่สูงสุด 12 ชั่วโมง) ---
         if (sleep > 0) {
-          int sleepPoints = sleep * 10;
+          // ✅ ป้องกันการโกง: คำนวณแต้มจากค่าที่ไม่เกิน 12
+          int effectiveSleep = sleep > 12 ? 12 : sleep;
+          int sleepPoints = effectiveSleep * 10;
           if (sleepRewarded) sleepPoints += 50;
+          
           newEvents.add({
             'type': 'sleep',
             'label': 'Sleeps:',
-            'value': '$sleep',
+            'value': '$sleep', // แสดงค่าจริงที่บันทึก
             'unit': 'hours',
             'points': sleepPoints > 0 ? sleepPoints : null,
           });
         }
+
+        // --- คำนวณแต้ม Mood ---
         if (mood != 'none') {
           String displayMood = mood[0].toUpperCase() + mood.substring(1);
           newEvents.add({
@@ -128,12 +129,18 @@ class _PointPageState extends State<PointPage> {
         setState(() {
           _totalPoints = fetchedTotalPoints;
           _dayEvents = newEvents;
-          _isLoading = false;
+          _isInitialLoading = false;
+          _isSilentLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error fetching points data: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isInitialLoading = false;
+          _isSilentLoading = false;
+        });
+      }
     }
   }
 
@@ -144,33 +151,19 @@ class _PointPageState extends State<PointPage> {
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
         title: const Center(
-          child: Text(
-            "HealthDay Points Rules",
-            style: TextStyle(
-              fontFamily: 'Poppins-SemiBold',
-              color: Color(0xFF2D7D9A),
-              fontSize: 18,
-            ),
-          ),
+          child: Text("Points Rules", style: TextStyle(fontFamily: 'Poppins-SemiBold', color: Color(0xFF2D7D9A), fontSize: 18)),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildRuleItem('assets/icons/water2_icon.png', AppColors.waterGradient, "Water", "5 Pts / glass\n+50 Pts Goal Bonus"),
-            _buildRuleItem('assets/icons/sleep2_icon.png', AppColors.sleepGradient, "Sleep", "10 Pts / hour\n+50 Pts Goal Bonus"),
-            _buildRuleItem('assets/icons/activity2_icon.png', AppColors.stepsGradient, "Steps", "10 Pts / 1,000 steps\n+100 Pts Goal Bonus"),
-            _buildRuleItem('assets/icons/mood2_icon.png', AppColors.moodGradient, "Mood", "20 Pts for daily check-in"),
-            const SizedBox(height: 10),
-            const Text("*Goal Bonus is awarded once per day", style: TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic)),
+            _buildRuleItem('assets/icons/water2_icon.png', AppColors.waterGradient, "Water", "5 Pts/glass (Max 12)\n+ 50 Bonus"),
+            _buildRuleItem('assets/icons/sleep2_icon.png', AppColors.sleepGradient, "Sleep", "10 Pts/hour (Max 12)\n+ 50 Bonus"),
+            _buildRuleItem('assets/icons/activity2_icon.png', AppColors.stepsGradient, "Steps", "10 Pts/1k steps\n+ 100 Bonus"),
+            _buildRuleItem('assets/icons/mood2_icon.png', AppColors.moodGradient, "Mood", "20 Pts for check-in"),
           ],
         ),
         actions: [
-          Center(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Got it!", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 16)),
-            ),
-          ),
+          Center(child: TextButton(onPressed: () => Navigator.pop(context), child: const Text("Got it!", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)))),
         ],
       ),
     );
@@ -178,20 +171,20 @@ class _PointPageState extends State<PointPage> {
 
   Widget _buildRuleItem(String assetPath, LinearGradient gradient, String title, String desc) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10.0),
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(gradient: gradient, shape: BoxShape.circle),
-            child: Image.asset(assetPath, width: 20, height: 20, color: Colors.white),
+            child: Image.asset(assetPath, width: 18, height: 18, color: Colors.white),
           ),
-          const SizedBox(width: 15),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Poppins-Medium')),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Poppins-Medium')),
                 Text(desc, style: const TextStyle(fontSize: 11, color: Colors.black54, fontFamily: 'Poppins')),
               ],
             ),
@@ -199,6 +192,32 @@ class _PointPageState extends State<PointPage> {
         ],
       ),
     );
+  }
+
+  void _navigateToIndex(int index) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => MainScreen(initialIndex: index)),
+      (route) => false,
+    );
+  }
+
+  void _changeDate(int days) {
+    setState(() => _selectedDate = _selectedDate.add(Duration(days: days)));
+    _fetchPointsData(_selectedDate);
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+      _fetchPointsData(_selectedDate);
+    }
   }
 
   @override
@@ -218,27 +237,55 @@ class _PointPageState extends State<PointPage> {
                 const SizedBox(height: 10),
                 _buildHeader(context),
                 const SizedBox(height: 20),
-                if (_isLoading)
+                if (_isInitialLoading)
                   const Padding(
                     padding: EdgeInsets.only(top: 100),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF2D7D9A),
-                      ),
-                    ),
+                    child: Center(child: CircularProgressIndicator(color: Color(0xFF2D7D9A))),
                   )
-                else ...[
-                  _buildPointsCard(),
-                  const SizedBox(height: 20),
-                  _buildDailyRecordsContainer(),
-                  const SizedBox(height: 140),
-                ],
+                else
+                  AnimatedOpacity(
+                    opacity: _isSilentLoading ? 0.5 : 1.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Column(
+                      children: [
+                        _buildPointsCard(),
+                        const SizedBox(height: 20),
+                        _buildDailyRecordsContainer(),
+                        const SizedBox(height: 140),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
         ),
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: const Row(
+                children: [
+                  Icon(Icons.arrow_back_ios_new, size: 14, color: AppColors.greyText),
+                  SizedBox(width: 5),
+                  Text("Back", style: TextStyle(color: AppColors.greyText, fontFamily: 'Poppins-Medium')),
+                ],
+              ),
+            ),
+          ),
+          const Expanded(child: Center(child: Text("Points", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.greyText)))),
+          const SizedBox(width: 60),
+        ],
+      ),
     );
   }
 
@@ -277,23 +324,15 @@ class _PointPageState extends State<PointPage> {
             ),
             GestureDetector(
               onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => RewardsShopPage(userPoints: _totalPoints)),
-                );
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => RewardsShopPage(userPoints: _totalPoints)));
                 _fetchPointsData(_selectedDate);
               },
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 30),
-                decoration: const BoxDecoration(
-                  gradient: AppColors.primaryOrangeGradient,
-                ),
+                decoration: const BoxDecoration(gradient: AppColors.primaryOrangeGradient),
                 child: Center(
-                  child: Text(
-                    '$_totalPoints Pts',
-                    style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppColors.lightText, fontFamily: 'Poppins-SemiBold'),
-                  ),
+                  child: Text('$_totalPoints Pts', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppColors.lightText, fontFamily: 'Poppins-SemiBold')),
                 ),
               ),
             ),
@@ -310,13 +349,7 @@ class _PointPageState extends State<PointPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: Padding(
         padding: const EdgeInsets.all(22),
@@ -328,37 +361,16 @@ class _PointPageState extends State<PointPage> {
               children: [
                 Row(
                   children: [
-                    Text(
-                      "${_selectedDate.day} ${_getMonthName(_selectedDate.month)} ${_selectedDate.year}",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontFamily: 'Poppins-Medium',
-                        color: Color(0xFF2D7D9A),
-                      ),
-                    ),
+                    Text("${_selectedDate.day} ${_getMonthName(_selectedDate.month)} ${_selectedDate.year}", style: const TextStyle(fontSize: 18, fontFamily: 'Poppins-Medium', color: Color(0xFF2D7D9A))),
                     const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => _selectDate(context),
-                      child: Icon(
-                        Icons.calendar_month_rounded,
-                        size: 20,
-                        color: AppColors.primaryBlueGradient.colors.first
-                            .withOpacity(0.6),
-                      ),
-                    ),
+                    GestureDetector(onTap: () => _selectDate(context), child: Icon(Icons.calendar_month_rounded, size: 20, color: AppColors.primaryBlueGradient.colors.first.withOpacity(0.6))),
                   ],
                 ),
                 Row(
                   children: [
-                    _buildNavButton(
-                      Icons.arrow_back_ios_rounded,
-                      () => _changeDate(-1),
-                    ),
+                    _buildNavButton(Icons.arrow_back_ios_rounded, () => _changeDate(-1)),
                     const SizedBox(width: 15),
-                    _buildNavButton(
-                      Icons.arrow_forward_ios_rounded,
-                      () => _changeDate(1),
-                    ),
+                    _buildNavButton(Icons.arrow_forward_ios_rounded, () => _changeDate(1)),
                   ],
                 ),
               ],
@@ -381,27 +393,19 @@ class _PointPageState extends State<PointPage> {
         children: [
           Image.asset(theme.iconPath, width: 24, height: 24, fit: BoxFit.contain, errorBuilder: (c, e, s) => Icon(Icons.check_circle_outline, color: theme.gradient.colors.first, size: 24)),
           const SizedBox(width: 15),
-          
-          // ส่วนเนื้อหา (หัวข้อ และ จำนวน อยู่บรรทัดเดียวกัน)
           Expanded(
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // หัวข้อ (เช่น Steps:, Waters:)
                 ShaderMask(
                   blendMode: BlendMode.srcIn,
                   shaderCallback: (bounds) => theme.gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
                   child: Text(item['label'], style: const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 15)),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text("${item['value']} ${item['unit']}".trim(), style: const TextStyle(fontSize: 16, color: Colors.black87, fontFamily: 'Poppins-SemiBold'), overflow: TextOverflow.ellipsis),
-                ),
+                Expanded(child: Text("${item['value']} ${item['unit']}".trim(), style: const TextStyle(fontSize: 16, color: Colors.black87, fontFamily: 'Poppins-SemiBold'), overflow: TextOverflow.ellipsis)),
               ],
             ),
           ),
-
-          // คะแนนที่ได้รับ (+Pts)
           if (points != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -412,63 +416,6 @@ class _PointPageState extends State<PointPage> {
                 child: Text('+$points Pts', style: const TextStyle(fontFamily: 'Poppins-SemiBold', fontSize: 14)),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  _StatTheme _getStatTheme(String type) {
-    switch (type) {
-      case 'steps': return _StatTheme('assets/icons/activity2_icon.png', AppColors.stepsGradient);
-      case 'water': return _StatTheme('assets/icons/water2_icon.png', AppColors.waterGradient);
-      case 'sleep': return _StatTheme('assets/icons/sleep2_icon.png', AppColors.sleepGradient);
-      case 'mood': return _StatTheme('assets/icons/mood2_icon.png', AppColors.moodGradient);
-      default: return _StatTheme('assets/icons/activity2_icon.png', AppColors.stepsGradient);
-    }
-  }
-
-  Widget _buildEmptyState() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 30),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(Icons.history_rounded, color: Colors.grey, size: 40),
-            SizedBox(height: 10),
-            Text(
-              "No activity recorded",
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-                fontFamily: 'Poppins-Medium',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: const Row(
-                children: [
-                  Icon(Icons.arrow_back_ios_new, size: 14, color: AppColors.greyText),
-                  SizedBox(width: 5),
-                  Text("Back", style: TextStyle(color: AppColors.greyText, fontFamily: 'Poppins-Medium')),
-                ],
-              ),
-            ),
-          ),
-          const Expanded(child: Center(child: Text("Points", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.greyText)))),
-          const SizedBox(width: 60),
         ],
       ),
     );
@@ -485,23 +432,30 @@ class _PointPageState extends State<PointPage> {
     );
   }
 
-  String _getMonthName(int month) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1];
-
-  void _changeDate(int days) {
-    setState(() => _selectedDate = _selectedDate.add(Duration(days: days)));
-    _fetchPointsData(_selectedDate);
+  Widget _buildEmptyState() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 30),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.history_rounded, color: Colors.grey, size: 40),
+            SizedBox(height: 10),
+            Text("No activity recorded", style: TextStyle(color: Colors.grey, fontSize: 14, fontFamily: 'Poppins-Medium')),
+          ],
+        ),
+      ),
+    );
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-      _fetchPointsData(_selectedDate);
+  String _getMonthName(int month) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1];
+
+  _StatTheme _getStatTheme(String type) {
+    switch (type) {
+      case 'steps': return _StatTheme('assets/icons/activity2_icon.png', AppColors.stepsGradient);
+      case 'water': return _StatTheme('assets/icons/water2_icon.png', AppColors.waterGradient);
+      case 'sleep': return _StatTheme('assets/icons/sleep2_icon.png', AppColors.sleepGradient);
+      case 'mood': return _StatTheme('assets/icons/mood2_icon.png', AppColors.moodGradient);
+      default: return _StatTheme('assets/icons/activity2_icon.png', AppColors.stepsGradient);
     }
   }
 
@@ -528,7 +482,7 @@ class _PointPageState extends State<PointPage> {
 
   Widget _buildNavItem(String iconPath, String label, int index) {
     return GestureDetector(
-      onTap: () => _navigateToIndex(index), // ✅ เรียกใช้ฟังก์ชันนำทาง
+      onTap: () => _navigateToIndex(index),
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -543,19 +497,10 @@ class _PointPageState extends State<PointPage> {
 
   Widget _buildAddButton() {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AddRecordPage()),
-        );
-      },
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AddRecordPage())),
       child: Container(
-        width: 60,
-        height: 60,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: AppColors.primaryOrangeGradient,
-        ),
+        width: 60, height: 60,
+        decoration: const BoxDecoration(shape: BoxShape.circle, gradient: AppColors.primaryOrangeGradient),
         child: const Icon(Icons.add, color: Colors.white, size: 35),
       ),
     );

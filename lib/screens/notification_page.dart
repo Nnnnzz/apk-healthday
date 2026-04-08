@@ -106,15 +106,6 @@ class _NotificationPageState extends State<NotificationPage> {
     );
   }
 
-  // HELPER WIDGETS
-  Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
-    return ShaderMask(
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (bounds) => gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-      child: Text(text, style: style),
-    );
-  }
-
   // MAIN COMPONENTS
   Widget _buildHeader(BuildContext context) {
     return Padding(

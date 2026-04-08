@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_colors.dart';
 import '../widgets/background_wrapper.dart';
-import '../screens/main_screen.dart';
 import 'notification_page.dart';
 import 'rewards_page.dart';
 import 'points_page.dart';
@@ -30,6 +29,13 @@ class _HomePageState extends State<HomePage> {
     _fetchUserData();
   }
 
+  // ✅ เพิ่มตัวนี้เพื่อให้หน้า Home อัปเดตข้อมูลทุกครั้งที่ถูกกลับมาหา
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _fetchUserData();
+  }
+
   Future<void> _fetchUserData() async {
     try {
       final user = supabase.auth.currentUser;
@@ -37,25 +43,9 @@ class _HomePageState extends State<HomePage> {
         final String todayDate = DateTime.now().toIso8601String().split('T')[0];
 
         final responses = await Future.wait([
-          supabase
-              .from('users')
-              .select()
-              .eq('user_id', user.id)
-              .limit(1)
-              .maybeSingle(),
-          supabase
-              .from('user_goals')
-              .select()
-              .eq('user_id', user.id)
-              .limit(1)
-              .maybeSingle(),
-          supabase
-              .from('daily_records')
-              .select()
-              .eq('user_id', user.id)
-              .eq('record_date', todayDate)
-              .limit(1)
-              .maybeSingle(),
+          supabase.from('users').select().eq('user_id', user.id).limit(1).maybeSingle(),
+          supabase.from('user_goals').select().eq('user_id', user.id).limit(1).maybeSingle(),
+          supabase.from('daily_records').select().eq('user_id', user.id).eq('record_date', todayDate).limit(1).maybeSingle(),
         ]);
 
         if (mounted) {
@@ -85,24 +75,17 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    // คำนวณข้อมูล Progress เหมือนเดิม
     int currentSteps = dailyRecord?['steps'] ?? 0;
     int targetSteps = userGoal?['target_steps'] ?? 8000;
-    double stepsProgress = targetSteps > 0
-        ? (currentSteps / targetSteps).clamp(0.0, 1.0)
-        : 0.0;
+    double stepsProgress = targetSteps > 0 ? (currentSteps / targetSteps).clamp(0.0, 1.0) : 0.0;
 
     int currentWater = dailyRecord?['water_glasses'] ?? 0;
     int targetWater = userGoal?['target_water'] ?? 8;
-    double waterProgress = targetWater > 0
-        ? (currentWater / targetWater).clamp(0.0, 1.0)
-        : 0.0;
+    double waterProgress = targetWater > 0 ? (currentWater / targetWater).clamp(0.0, 1.0) : 0.0;
 
     int currentSleep = dailyRecord?['sleep_hours'] ?? 0;
     String currentMood = dailyRecord?['mood'] ?? 'none';
-    String displayMood = currentMood == 'none'
-        ? 'None'
-        : currentMood[0].toUpperCase() + currentMood.substring(1);
+    String displayMood = currentMood == 'none' ? 'None' : currentMood[0].toUpperCase() + currentMood.substring(1);
 
     return BackgroundWrapper(
       child: RefreshIndicator(
@@ -113,22 +96,13 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildProfileHeader3Layers(
-                context,
-              ), // ส่วนที่ปรับ Logic ด้านในแต่หน้าตาเดิม
+              _buildProfileHeader3Layers(context),
               Padding(
                 padding: const EdgeInsets.all(25),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Today's Goals",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontFamily: 'Poppins-Medium',
-                        color: AppColors.darkText,
-                      ),
-                    ),
+                    const Text("Today's Goals", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.darkText)),
                     const SizedBox(height: 15),
                     Row(
                       children: [
@@ -152,66 +126,30 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     const SizedBox(height: 15),
-                    const Text(
-                      "Body Status",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontFamily: 'Poppins-Medium',
-                        color: AppColors.darkText,
-                      ),
-                    ),
+                    const Text("Body Status", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.darkText)),
                     const SizedBox(height: 15),
                     Row(
                       children: [
-                        Expanded(
-                          child: _buildStatusCard(
-                            iconPath: 'assets/icons/sleep_icon.png',
-                            text: "Sleep: $currentSleep hrs",
-                            textColor: AppColors.sleepGradient.colors.last,
-                          ),
-                        ),
+                        Expanded(child: _buildStatusCard(iconPath: 'assets/icons/sleep_icon.png', text: "Sleep: $currentSleep hrs", textColor: AppColors.sleepGradient.colors.last)),
                         const SizedBox(width: 15),
-                        Expanded(
-                          child: _buildStatusCard(
-                            iconPath: 'assets/icons/mood_icon.png',
-                            text: "Mood: $displayMood",
-                            textColor: AppColors.moodGradient.colors.first,
-                          ),
-                        ),
+                        Expanded(child: _buildStatusCard(iconPath: 'assets/icons/mood_icon.png', text: "Mood: $displayMood", textColor: AppColors.moodGradient.colors.first)),
                       ],
                     ),
                     const SizedBox(height: 15),
-                    const Text(
-                      "Points",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontFamily: 'Poppins-Medium',
-                        color: AppColors.darkText,
-                      ),
-                    ),
+                    const Text("Features", style: TextStyle(fontSize: 20, fontFamily: 'Poppins-Medium', color: AppColors.darkText)),
                     const SizedBox(height: 15),
                     _buildActionButton(
                       iconPath: 'assets/icons/rewards_icon.png',
                       title: "Redeem rewards",
                       titleGradient: AppColors.primaryOrangeGradient,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const RewardsShopPage(),
-                        ),
-                      ),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RewardsShopPage())),
                     ),
                     const SizedBox(height: 15),
                     _buildActionButton(
                       iconPath: 'assets/icons/point_icon.png',
                       title: "Your points",
                       titleGradient: AppColors.primaryOrangeGradient,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const PointPage(),
-                        ),
-                      ),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PointPage())),
                     ),
                   ],
                 ),
@@ -225,15 +163,11 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildProfileHeader3Layers(BuildContext context) {
     final username = userData?['username'] ?? "Guest";
-    final fullName =
-        "${userData?['first_name'] ?? ''} ${userData?['last_name'] ?? ''}"
-            .trim();
+    final fullName = "${userData?['first_name'] ?? ''} ${userData?['last_name'] ?? ''}".trim();
     final displayName = fullName.isEmpty ? "Welcome!" : fullName;
 
-    // ดึงข้อมูลรูปภาพและยศ
     final profileUrl = userData?['profile_image_url'];
     final specialTitle = userData?['special_title'];
-
     final height = userData?['height_cm']?.toString() ?? "-";
     final weight = userData?['weight_kg']?.toString() ?? "-";
     final points = userData?['points']?.toString() ?? "0";
@@ -243,59 +177,28 @@ class _HomePageState extends State<HomePage> {
       height: 250,
       decoration: const BoxDecoration(
         gradient: AppColors.primaryOrangeGradient,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(10),
-          bottomRight: Radius.circular(10),
-        ),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(10),
-          bottomRight: Radius.circular(10),
-        ),
+        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
         child: Stack(
           children: [
-            // Blob เดิมของคุณ
-            Positioned(
-              top: 25,
-              right: 20,
-              child: _blobHelper(125, AppColors.moodGradient),
-            ),
-            Positioned(
-              top: -25,
-              left: -20,
-              child: _blobHelper(150, AppColors.moodGradient),
-            ),
-            Positioned(
-              bottom: 0,
-              left: -10,
-              child: _blobHelper(50, AppColors.moodGradient),
-            ),
-            Positioned(
-              bottom: 0,
-              right: -10,
-              child: _blobHelper(70, AppColors.moodGradient),
-            ),
+            Positioned(top: 25, right: 20, child: _blobHelper(125, AppColors.moodGradient)),
+            Positioned(top: -25, left: -20, child: _blobHelper(150, AppColors.moodGradient)),
+            Positioned(bottom: 0, left: -10, child: _blobHelper(50, AppColors.moodGradient)),
+            Positioned(bottom: 0, right: -10, child: _blobHelper(70, AppColors.moodGradient)),
 
-            // Glass Layer เดิม
             Positioned.fill(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                 child: Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppColors.glassBorderColor,
-                      width: 1.0,
-                    ),
+                    border: Border.all(color: AppColors.glassBorderColor, width: 1.0),
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withOpacity(0.1),
-                        Colors.transparent,
-                        Colors.white.withOpacity(0.03),
-                      ],
+                      colors: [Colors.white.withOpacity(0.1), Colors.transparent, Colors.white.withOpacity(0.03)],
                       stops: const [0.0, 0.4, 1.0],
                     ),
                   ),
@@ -304,12 +207,7 @@ class _HomePageState extends State<HomePage> {
             ),
 
             Container(
-              padding: const EdgeInsets.only(
-                top: 60,
-                left: 25,
-                right: 25,
-                bottom: 30,
-              ),
+              padding: const EdgeInsets.only(top: 60, left: 25, right: 25, bottom: 30),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -317,36 +215,14 @@ class _HomePageState extends State<HomePage> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Container(
-                        width: 80,
-                        height: 32,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryBlueGradient,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: FittedBox(
-                          child: Text(
-                            "$points Pts",
-                            style: const TextStyle(
-                              color: AppColors.lightText,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
+                        width: 80, height: 32, alignment: Alignment.center,
+                        decoration: BoxDecoration(gradient: AppColors.primaryBlueGradient, borderRadius: BorderRadius.circular(20)),
+                        child: FittedBox(child: Text("$points Pts", style: const TextStyle(color: AppColors.lightText, fontWeight: FontWeight.bold, fontSize: 13))),
                       ),
                       const SizedBox(width: 15),
                       GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const NotificationPage(),
-                          ),
-                        ),
-                        child: Image.asset(
-                          'assets/icons/notifications_icon.png',
-                          width: 28,
-                        ),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationPage())),
+                        child: Image.asset('assets/icons/notifications_icon.png', width: 28),
                       ),
                     ],
                   ),
@@ -354,104 +230,49 @@ class _HomePageState extends State<HomePage> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // ✅ แก้ไข: แสดงรูปโปรไฟล์จริงหรือ Icon Default โดยรักษารูปทรงเดิม
+                      // ✅ แสดงรูปโปรไฟล์จาก URL หรือ Icon Default
                       CircleAvatar(
                         radius: 40,
                         backgroundColor: Colors.white24,
-                        backgroundImage: profileUrl != null
-                            ? NetworkImage(profileUrl)
-                            : null,
-                        child: profileUrl == null
-                            ? const Icon(
-                                Icons.person_outline,
-                                size: 55,
-                                color: Colors.white,
-                              )
-                            : null,
+                        backgroundImage: profileUrl != null && profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
+                        child: profileUrl == null || profileUrl.isEmpty 
+                          ? const Icon(Icons.person_outline, size: 55, color: Colors.white) 
+                          : null,
                       ),
                       const SizedBox(width: 15),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              username,
-                              style: const TextStyle(
-                                color: AppColors.greyText,
-                                fontSize: 14,
-                              ),
-                            ),
-                            Text(
-                              displayName,
-                              style: const TextStyle(
-                                color: AppColors.greyText,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-
-                            // ✅ เพิ่มยศ (ถ้ามี) แสดงใต้ชื่อแบบเล็กๆ ไม่รบกวน Layout
+                            Text(username, style: const TextStyle(color: AppColors.greyText, fontSize: 14)),
+                            Text(displayName, style: const TextStyle(color: AppColors.greyText, fontSize: 22, fontWeight: FontWeight.bold)),
+                            
+                            // ✅ Special Title (Badge สีฟ้าไล่เฉด)
                             if (specialTitle != null) ...[
                               const SizedBox(height: 4),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 3,
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                 decoration: BoxDecoration(
-                                  // ไล่เฉดสีฟ้าเข้มไปฟ้าอ่อน
                                   gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFF1E3C72), // ฟ้าเข้ม
-                                      Color(0xFF2A5298), // ฟ้ากลาง
-                                      Color(0xFF2193B0), // ฟ้าสดใส
-                                    ],
+                                    colors: [Color(0xFF1E3C72), Color(0xFF2A5298), Color(0xFF2193B0)],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                   ),
                                   borderRadius: BorderRadius.circular(8),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(
-                                        0xFF2193B0,
-                                      ).withOpacity(0.4),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
+                                  boxShadow: [BoxShadow(color: const Color(0xFF2193B0).withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2))],
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(
-                                      Icons.verified_rounded,
-                                      color: Colors.white,
-                                      size: 12,
-                                    ),
+                                    const Icon(Icons.verified_rounded, color: Colors.white, size: 12),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      specialTitle.toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
-                                        fontFamily: 'Poppins',
-                                      ),
-                                    ),
+                                    Text(specialTitle.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5, fontFamily: 'Poppins')),
                                   ],
                                 ),
                               ),
                             ],
-
                             const SizedBox(height: 2),
-                            Text(
-                              "Height : $height cm   Weight : $weight kg",
-                              style: const TextStyle(
-                                color: AppColors.greyText,
-                                fontSize: 14,
-                              ),
-                            ),
+                            Text("Height : $height cm   Weight : $weight kg", style: const TextStyle(color: AppColors.greyText, fontSize: 14)),
                           ],
                         ),
                       ),
@@ -466,47 +287,16 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- Helper Widgets อื่นๆ (GoalCard, StatusCard, ActionButton, GlassBox) ใช้ของเดิมทั้งหมด ---
   Widget _blobHelper(double size, LinearGradient gradient) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient),
-    );
+    return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient));
   }
 
-  Widget _buildGoalCard({
-    required String iconPath,
-    required String title,
-    required String total,
-    required LinearGradient titleGradient,
-    required double progress,
-    required LinearGradient progressGradient,
-  }) {
+  Widget _buildGoalCard({required String iconPath, required String title, required String total, required LinearGradient titleGradient, required double progress, required LinearGradient progressGradient}) {
     return Expanded(
       child: _buildGlassBox(
-        height: 170,
-        radius: 20,
-        blur: 4.0,
+        height: 170, radius: 20, blur: 4.0,
         gradientColors: [Colors.white.withOpacity(0.2), Colors.transparent],
-        backgroundLayer: Positioned.fill(
-          child: Center(
-            child: Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    progressGradient.colors.first.withOpacity(0.25),
-                    progressGradient.colors.first.withOpacity(0.0),
-                  ],
-                  stops: const [0.2, 1.0],
-                ),
-              ),
-            ),
-          ),
-        ),
+        backgroundLayer: Positioned.fill(child: Center(child: Container(width: 140, height: 140, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [progressGradient.colors.first.withOpacity(0.25), progressGradient.colors.first.withOpacity(0.0)], stops: const [0.2, 1.0]))))),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -514,51 +304,10 @@ class _HomePageState extends State<HomePage> {
             children: [
               Image.asset(iconPath, width: 32),
               const Spacer(),
-              Center(
-                child: _buildGradientText(
-                  title,
-                  titleGradient,
-                  const TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Poppins-Medium',
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  total,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.darkText.withOpacity(0.5),
-                    fontFamily: 'Poppins-Medium',
-                  ),
-                ),
-              ),
+              Center(child: _buildGradientText(title, titleGradient, const TextStyle(fontSize: 34, fontWeight: FontWeight.bold, fontFamily: 'Poppins-Medium'))),
+              Align(alignment: Alignment.centerRight, child: Text(total, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.darkText.withOpacity(0.5), fontFamily: 'Poppins-Medium'))),
               const Spacer(),
-              Stack(
-                children: [
-                  Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  FractionallySizedBox(
-                    widthFactor: progress,
-                    child: Container(
-                      height: 8,
-                      decoration: BoxDecoration(
-                        gradient: progressGradient,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              Stack(children: [Container(height: 8, decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(10))), FractionallySizedBox(widthFactor: progress, child: Container(height: 8, decoration: BoxDecoration(gradient: progressGradient, borderRadius: BorderRadius.circular(10))))]),
             ],
           ),
         ),
@@ -566,137 +315,36 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildStatusCard({
-    required String iconPath,
-    required String text,
-    required Color textColor,
-  }) {
+  Widget _buildStatusCard({required String iconPath, required String text, required Color textColor}) {
     return _buildGlassBox(
-      height: 75,
-      stackAlignment: Alignment.center,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            Image.asset(iconPath, width: 32),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: textColor,
-                  fontFamily: 'Poppins-Medium',
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
+      height: 75, stackAlignment: Alignment.center,
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [Image.asset(iconPath, width: 32), const SizedBox(width: 12), Expanded(child: Text(text, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textColor, fontFamily: 'Poppins-Medium'), overflow: TextOverflow.ellipsis))])),
     );
   }
 
-  Widget _buildActionButton({
-    required String iconPath,
-    required String title,
-    required LinearGradient titleGradient,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildActionButton({required String iconPath, required String title, required LinearGradient titleGradient, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
-      child: _buildGlassBox(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-          child: Row(
-            children: [
-              Image.asset(iconPath, width: 35),
-              const SizedBox(width: 20),
-              _buildGradientText(
-                title,
-                titleGradient,
-                const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Poppins-Medium',
-                ),
-              ),
-              const Spacer(),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 18,
-                color: titleGradient.colors.last,
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: _buildGlassBox(child: Padding(padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20), child: Row(children: [Image.asset(iconPath, width: 35), const SizedBox(width: 20), _buildGradientText(title, titleGradient, const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Poppins-Medium')), const Spacer(), Icon(Icons.arrow_forward_ios_rounded, size: 18, color: titleGradient.colors.last)]))),
     );
   }
 
-  Widget _buildGradientText(
-    String text,
-    LinearGradient gradient,
-    TextStyle style,
-  ) {
-    return ShaderMask(
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (bounds) => gradient.createShader(
-        Rect.fromLTWH(0, 0, bounds.width, bounds.height),
-      ),
-      child: Text(text, style: style),
-    );
+  Widget _buildGradientText(String text, LinearGradient gradient, TextStyle style) {
+    return ShaderMask(blendMode: BlendMode.srcIn, shaderCallback: (bounds) => gradient.createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)), child: Text(text, style: style));
   }
 
-  Widget _buildGlassBox({
-    double? height,
-    double radius = 15.0,
-    double blur = 5.0,
-    List<Color>? gradientColors,
-    Alignment stackAlignment = Alignment.topLeft,
-    Widget? backgroundLayer,
-    required Widget child,
-  }) {
+  Widget _buildGlassBox({double? height, double radius = 15.0, double blur = 5.0, List<Color>? gradientColors, Alignment stackAlignment = Alignment.topLeft, Widget? backgroundLayer, required Widget child}) {
     final colors = gradientColors ?? [AppColors.glassColor, Colors.transparent];
     return Container(
-      width: double.infinity,
-      height: height,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      width: double.infinity, height: height,
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(radius), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 8))]),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: Stack(
           alignment: stackAlignment,
           children: [
             if (backgroundLayer != null) backgroundLayer,
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: AppColors.glassBorderColor,
-                      width: 1.0,
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: colors,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            Positioned.fill(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur), child: Container(decoration: BoxDecoration(border: Border.all(color: AppColors.glassBorderColor, width: 1.0), gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors))))),
             child,
           ],
         ),
