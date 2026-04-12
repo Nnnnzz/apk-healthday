@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pedometer/pedometer.dart'; 
+import 'package:permission_handler/permission_handler.dart'; 
 import '../constants/app_colors.dart';
 import 'notification_page.dart';
 import 'rewards_page.dart';
@@ -22,16 +25,95 @@ class _HomePageState extends State<HomePage> {
 
   bool _isLoading = true;
 
+  // ✅ Variables สำหรับระบบนับก้าว
+  StreamSubscription<StepCount>? _stepCountSubscription;
+  int _todaySteps = 0;
+  int _initialSteps = -1;
+
+  // ✅ Variable สำหรับ Real-time Profile
+  StreamSubscription<List<Map<String, dynamic>>>? _userStreamSubscription;
+
   @override
   void initState() {
     super.initState();
-    _fetchUserData();
+    _initAllData();
+  }
+
+  // ✅ ฟังก์ชันเริ่มต้นข้อมูลทั้งหมด
+  Future<void> _initAllData() async {
+    await _fetchUserData(); // ดึงข้อมูลครั้งแรก
+    _setupRealtimeUserStream(); // เริ่มฟังการเปลี่ยนแปลงโปรไฟล์แบบ Real-time
+    _checkPermissionAndInitPedometer(); // เริ่มระบบนับก้าว
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _fetchUserData();
+  }
+
+  @override
+  void dispose() {
+    _stepCountSubscription?.cancel();
+    _userStreamSubscription?.cancel(); // ✅ คืนค่า Stream เมื่อปิดหน้าจอ
+    super.dispose();
+  }
+
+  // ✅ 1. ระบบ Real-time Profile (ไม่ต้องกด Refresh)
+  void _setupRealtimeUserStream() {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    _userStreamSubscription = supabase
+        .from('users')
+        .stream(primaryKey: ['user_id'])
+        .eq('user_id', user.id)
+        .listen((List<Map<String, dynamic>> data) {
+          if (data.isNotEmpty && mounted) {
+            setState(() {
+              userData = data.first; // อัปเดตข้อมูลโปรไฟล์ทันทีที่ DB เปลี่ยน
+            });
+          }
+        });
+  }
+
+  // ✅ 2. ระบบนับก้าว (Pedometer Logic)
+  Future<void> _checkPermissionAndInitPedometer() async {
+    PermissionStatus status = await Permission.activityRecognition.request();
+    if (status.isGranted) {
+      _stepCountSubscription = Pedometer.stepCountStream.listen(
+        _onStepCount, 
+        onError: (error) => debugPrint('Pedometer Error: $error')
+      );
+    }
+  }
+
+  void _onStepCount(StepCount event) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    if (_initialSteps == -1) {
+      int dbSteps = dailyRecord?['steps'] ?? 0;
+      _initialSteps = event.steps - dbSteps;
+    }
+
+    if (mounted) {
+      setState(() {
+        _todaySteps = event.steps - _initialSteps;
+        if (_todaySteps < 0) _todaySteps = 0;
+      });
+    }
+
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    try {
+      await supabase.from('daily_records').upsert({
+        'user_id': user.id,
+        'record_date': today,
+        'steps': _todaySteps,
+      }, onConflict: 'user_id, record_date');
+    } catch (e) {
+      debugPrint("Error auto-updating steps: $e");
+    }
   }
 
   Future<void> _fetchUserData() async {
@@ -51,6 +133,9 @@ class _HomePageState extends State<HomePage> {
             userData = responses[0];
             userGoal = responses[1];
             dailyRecord = responses[2];
+            if (dailyRecord != null) {
+              _todaySteps = dailyRecord!['steps'] ?? 0;
+            }
             _isLoading = false;
           });
         }
@@ -74,9 +159,9 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    int currentSteps = dailyRecord?['steps'] ?? 0;
+    int displaySteps = _todaySteps;
     int targetSteps = userGoal?['target_steps'] ?? 8000;
-    double stepsProgress = targetSteps > 0 ? (currentSteps / targetSteps).clamp(0.0, 1.0) : 0.0;
+    double stepsProgress = targetSteps > 0 ? (displaySteps / targetSteps).clamp(0.0, 1.0) : 0.0;
 
     int currentWater = dailyRecord?['water_glasses'] ?? 0;
     int targetWater = userGoal?['target_water'] ?? 8;
@@ -109,7 +194,7 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           _buildGoalCard(
                             iconPath: 'assets/icons/activity_icon.png',
-                            title: "$currentSteps",
+                            title: "$displaySteps",
                             total: "/$targetSteps Steps",
                             titleGradient: AppColors.stepsGradient,
                             progress: stepsProgress,
@@ -163,6 +248,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ✅ UI ส่วน Header (หน้าตาเหมือนเดิมเป๊ะ แต่รองรับ Real-time)
   Widget _buildProfileHeader3Layers(BuildContext context) {
     final username = userData?['username'] ?? "Guest";
     final fullName = "${userData?['first_name'] ?? ''} ${userData?['last_name'] ?? ''}".trim();
@@ -282,6 +368,8 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+  // --- Widget Helpers (คงเดิมตาม UI เดิม) ---
 
   Widget _blobHelper(double size, LinearGradient gradient) {
     return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient));

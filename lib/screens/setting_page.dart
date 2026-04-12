@@ -253,6 +253,7 @@ class _SettingPageState extends State<SettingPage> {
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
+      barrierDismissible: false, // บังคับให้เลือก ไม่ให้กดพื้นหลังแล้วหาย
       builder: (context) => AlertDialog(
         title: const Text(
           'Log Out',
@@ -279,10 +280,14 @@ class _SettingPageState extends State<SettingPage> {
           ),
           TextButton(
             onPressed: () async {
+              // ✅ 1. ลบ Session ใน Supabase (และในเครื่องด้วยอัตโนมัติ)
               await Supabase.instance.client.auth.signOut();
+              
               if (!context.mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
+
+              // ✅ 2. เคลียร์ Stack หน้าจอทั้งหมดทิ้งแล้วส่งกลับไปหน้า Login
+              // วิธีนี้จะทำให้เวลากด Back จากหน้า Login จะไม่สามารถกลับมาหน้านี้ได้อีก
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (context) => const LoginScreen()),
                 (route) => false,
               );
