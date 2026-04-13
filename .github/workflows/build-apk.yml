@@ -3,36 +3,30 @@ name: Build Android APK
 on:
   push:
     branches:
-      - main  # หรือเปลี่ยนเป็นชื่อ branch ที่คุณใช้งาน (เช่น Pongsakorn-6787058)
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. ดึงโค้ดจาก GitHub ลงมาในเครื่องจำลอง
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4 # อัปเดตจาก v3 เป็น v4
 
-      # 2. ติดตั้ง Java (จำเป็นสำหรับ Android)
-      - uses: actions/setup-java@v3
+      - uses: actions/setup-java@v4 # อัปเดตจาก v3 เป็น v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 3. ติดตั้ง Flutter
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 4. ดาวน์โหลด Dependencies
       - run: flutter pub get
 
-      # 5. สั่ง Build APK (โหมด Release)
       - run: flutter build apk --release
 
-      # 6. เก็บไฟล์ APK ไว้ในระบบเพื่อให้เราดาวน์โหลดได้
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # สำคัญมาก! ต้องเป็น v4 เท่านั้น
         with:
           name: healthday-apk
           path: build/app/outputs/flutter-apk/app-release.apk
