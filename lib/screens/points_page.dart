@@ -28,7 +28,6 @@ class _PointPageState extends State<PointPage> {
     _fetchPointsData(_selectedDate, isInitial: true);
   }
 
-  // ฟังก์ชันดึงข้อมูล
   Future<void> _fetchPointsData(DateTime date, {bool isInitial = false}) async {
     if (!mounted) return;
 
@@ -75,7 +74,6 @@ class _PointPageState extends State<PointPage> {
         bool sleepRewarded = recordData['sleep_rewarded'] ?? false;
         bool moodRewarded = recordData['mood_rewarded'] ?? false;
 
-        // คำนวณแต้ม Steps (แสดงตามจริง แต่แต้มโบนัสคุมด้วยระบบหลังบ้านอยู่แล้ว)
         if (steps > 0) {
           int stepPoints = (steps ~/ 1000) * 10;
           if (stepRewarded) stepPoints += 100;
@@ -88,12 +86,10 @@ class _PointPageState extends State<PointPage> {
           });
         }
 
-        // คำนวณแต้ม Water (จำกัดแต้มที่สูงสุด 12 แก้ว)
         if (water > 0) {
           int effectiveWater = water > 12 ? 12 : water;
           int waterPoints = effectiveWater * 5;
           if (waterRewarded) waterPoints += 50;
-
           newEvents.add({
             'type': 'water',
             'label': 'Waters:',
@@ -103,12 +99,10 @@ class _PointPageState extends State<PointPage> {
           });
         }
 
-        // คำนวณแต้ม Sleep (จำกัดแต้มที่สูงสุด 12 ชั่วโมง)
         if (sleep > 0) {
           int effectiveSleep = sleep > 12 ? 12 : sleep;
           int sleepPoints = effectiveSleep * 10;
           if (sleepRewarded) sleepPoints += 50;
-
           newEvents.add({
             'type': 'sleep',
             'label': 'Sleeps:',
@@ -118,7 +112,6 @@ class _PointPageState extends State<PointPage> {
           });
         }
 
-        // คำนวณแต้ม Mood
         if (mood != 'none') {
           String displayMood = mood[0].toUpperCase() + mood.substring(1);
           newEvents.add({
@@ -335,7 +328,41 @@ class _PointPageState extends State<PointPage> {
           ),
         ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      // ✅ แก้ไขส่วน Bottom Bar ให้เหมือนหน้าอื่นๆ
+      bottomNavigationBar: Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            height: 85,
+            decoration: BoxDecoration(
+              color: AppColors.lightText,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(35),
+                topRight: Radius.circular(35),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem('assets/icons/home_icon.png', 'home', 0),
+                _buildNavItem('assets/icons/stat_icon.png', 'stats', 1),
+                const SizedBox(width: 60),
+                _buildNavItem('assets/icons/calendar_icon.png', 'calendar', 2),
+                _buildNavItem('assets/icons/setting_icon.png', 'settings', 3),
+              ],
+            ),
+          ),
+          Positioned(top: -25, child: _buildAddButton()),
+        ],
+      ),
     );
   }
 
@@ -559,7 +586,6 @@ class _PointPageState extends State<PointPage> {
             theme.iconPath,
             width: 24,
             height: 24,
-            fit: BoxFit.contain,
             errorBuilder: (c, e, s) => Icon(
               Icons.check_circle_outline,
               color: theme.gradient.colors.first,
@@ -570,21 +596,28 @@ class _PointPageState extends State<PointPage> {
           Expanded(
             child: Row(
               children: [
-                ShaderMask(
-                  blendMode: BlendMode.srcIn,
-                  shaderCallback: (bounds) => theme.gradient.createShader(
-                    Rect.fromLTWH(0, 0, bounds.width, bounds.height),
-                  ),
-                  child: Text(
-                    item['label'],
-                    style: const TextStyle(
-                      fontFamily: 'Poppins-Medium',
-                      fontSize: 15,
+                // ✅ ใช้ Flexible ป้องกัน Label ยาวเบียด UI
+                Flexible(
+                  flex: 2,
+                  child: ShaderMask(
+                    blendMode: BlendMode.srcIn,
+                    shaderCallback: (bounds) => theme.gradient.createShader(
+                      Rect.fromLTWH(0, 0, bounds.width, bounds.height),
+                    ),
+                    child: Text(
+                      item['label'],
+                      style: const TextStyle(
+                        fontFamily: 'Poppins-Medium',
+                        fontSize: 15,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
+                // ✅ ใช้ Flexible ป้องกันค่า Value ยาวจนล้นจอ
+                Flexible(
+                  flex: 3,
                   child: Text(
                     "${item['value']} ${item['unit']}".trim(),
                     style: const TextStyle(
@@ -705,59 +738,34 @@ class _PointPageState extends State<PointPage> {
     }
   }
 
-  Widget _buildBottomNavigationBar() {
-    return Container(
-      height: 100,
-      decoration: BoxDecoration(
-        color: AppColors.lightText,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(35),
-          topRight: Radius.circular(35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavItem('assets/icons/home_icon.png', 'home', 0),
-          _buildNavItem('assets/icons/stat_icon.png', 'stats', 1),
-          _buildAddButton(),
-          _buildNavItem('assets/icons/calendar_icon.png', 'calendar', 2),
-          _buildNavItem('assets/icons/setting_icon.png', 'settings', 3),
-        ],
-      ),
-    );
-  }
-
   Widget _buildNavItem(String iconPath, String label, int index) {
     return GestureDetector(
       onTap: () => _navigateToIndex(index),
       behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            iconPath,
-            width: 28,
-            height: 28,
-            color: AppColors.greyText,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
+      child: SizedBox(
+        width: 60,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              iconPath,
+              width: 26,
+              height: 26,
               color: AppColors.greyText,
-              fontFamily: 'Poppins',
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            FittedBox(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.greyText,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -769,13 +777,23 @@ class _PointPageState extends State<PointPage> {
         MaterialPageRoute(builder: (context) => const AddRecordPage()),
       ),
       child: Container(
-        width: 60,
-        height: 60,
-        decoration: const BoxDecoration(
+        width: 65,
+        height: 65,
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: AppColors.primaryOrangeGradient,
+          border: Border.all(color: Colors.white, width: 4),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryOrangeGradient.colors.first.withOpacity(
+                0.3,
+              ),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
-        child: const Icon(Icons.add, color: Colors.white, size: 35),
+        child: const Icon(Icons.add, color: Colors.white, size: 38),
       ),
     );
   }

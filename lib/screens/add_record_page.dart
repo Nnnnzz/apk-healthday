@@ -89,11 +89,9 @@ class _AddRecordPageState extends State<AddRecordPage> {
           _sleepController.text = data['sleep_hours']?.toString() ?? "0";
           _selectedMood = data['mood'] ?? 'none';
           _detailController.text = data['detail_note'] ?? "";
-
           _oldWater = data['water_glasses'] ?? 0;
           _oldSleep = data['sleep_hours'] ?? 0;
           _oldSteps = data['steps'] ?? 0;
-
           _waterRewarded = data['water_rewarded'] ?? false;
           _sleepRewarded = data['sleep_rewarded'] ?? false;
           _moodRewarded = data['mood_rewarded'] ?? false;
@@ -116,22 +114,14 @@ class _AddRecordPageState extends State<AddRecordPage> {
   int _getValue(TextEditingController controller) =>
       int.tryParse(controller.text) ?? 0;
 
-  // ฟังก์ชันบันทึก
   Future<void> _saveRecord() async {
     if (_isLoading) return;
-
     int newWater = _getValue(_waterController);
     int newSleep = _getValue(_sleepController);
 
-    // Anti-Cheat Logi
-    if (newWater > 12) {
-      _showError("ห้ามบันทึกน้ำเกิน 12 แก้วต่อวัน");
-      return;
-    }
-    if (newSleep > 12) {
-      _showError("ห้ามบันทึกเวลานอนเกิน 12 ชั่วโมงต่อวัน");
-      return;
-    }
+    if (newWater > 12) return _showError("ห้ามบันทึกน้ำเกิน 12 แก้วต่อวัน");
+    if (newSleep > 12)
+      return _showError("ห้ามบันทึกเวลานอนเกิน 12 ชั่วโมงต่อวัน");
 
     setState(() => _isLoading = true);
 
@@ -140,7 +130,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
       if (user == null) throw Exception('User not logged in');
 
       int earnedPoints = 0;
-
       final responses = await Future.wait([
         supabase
             .from('user_goals')
@@ -165,10 +154,7 @@ class _AddRecordPageState extends State<AddRecordPage> {
 
       earnedPoints += (newWater - _oldWater) * 5;
       earnedPoints += (newSleep - _oldSleep) * 10;
-
-      int oldThousandGroup = _oldSteps ~/ 1000;
-      int newThousandGroup = currentSteps ~/ 1000;
-      earnedPoints += (newThousandGroup - oldThousandGroup) * 10;
+      earnedPoints += ((currentSteps ~/ 1000) - (_oldSteps ~/ 1000)) * 10;
 
       if (newWater >= targetWater && !_waterRewarded) {
         earnedPoints += 50;
@@ -208,13 +194,10 @@ class _AddRecordPageState extends State<AddRecordPage> {
             .select('points')
             .eq('user_id', user.id)
             .single();
-        int currentTotal = userData['points'] ?? 0;
-        int finalPoints = currentTotal + earnedPoints;
-        if (finalPoints < 0) finalPoints = 0;
-
+        int finalPoints = (userData['points'] ?? 0) + earnedPoints;
         await supabase
             .from('users')
-            .update({'points': finalPoints})
+            .update({'points': finalPoints < 0 ? 0 : finalPoints})
             .eq('user_id', user.id);
       }
 
@@ -232,21 +215,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
       }, onConflict: 'user_id, record_date');
 
       if (!mounted) return;
-
-      String msg = earnedPoints >= 0
-          ? 'Saved! +$earnedPoints Pts ⭐'
-          : 'Saved! $earnedPoints Pts 📉';
-      if (earnedPoints == 0) msg = 'Saved Successfully! 🎉';
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: earnedPoints >= 0
-              ? const Color(0xFF2D7D9A)
-              : Colors.redAccent,
-        ),
-      );
-
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const MainScreen()),
@@ -269,26 +237,28 @@ class _AddRecordPageState extends State<AddRecordPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
+      resizeToAvoidBottomInset: true, // ✅ ป้องกันคีย์บอร์ดทับ UI
       body: Stack(
         children: [
           _buildBackgroundOrbs(),
           SafeArea(
             child: Column(
               children: [
-                const SizedBox(height: 10),
                 _buildHeader(context),
-                _buildBigHeartIcon(),
                 Expanded(
                   child: SingleChildScrollView(
+                    // ✅ คลุมส่วนที่เหลือให้เลื่อนได้
                     padding: const EdgeInsets.symmetric(horizontal: 25),
+                    physics: const BouncingScrollPhysics(),
                     child: Column(
                       children: [
+                        _buildBigHeartIcon(),
                         _buildMainRecordCard(),
                         const SizedBox(height: 30),
                         _isLoading
                             ? const CircularProgressIndicator()
                             : _buildActionButtons(context),
-                        const SizedBox(height: 40),
+                        const SizedBox(height: 30), // ✅ เผื่อช่องว่างด้านล่าง
                       ],
                     ),
                   ),
@@ -301,85 +271,32 @@ class _AddRecordPageState extends State<AddRecordPage> {
     );
   }
 
-  // --- UI Components ---
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-      child: Row(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Row(
-              children: [
-                Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 16,
-                  color: AppColors.greyText,
-                ),
-                SizedBox(width: 5),
-                Text(
-                  "Back",
-                  style: TextStyle(
-                    color: AppColors.greyText,
-                    fontFamily: 'Poppins-Medium',
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                "Add Record",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontFamily: 'Poppins-Medium',
-                  color: AppColors.greyText,
-                ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                size: 18,
+                color: AppColors.greyText,
               ),
+              onPressed: () => Navigator.pop(context),
             ),
           ),
-          const SizedBox(width: 60),
+          const Text(
+            "Add Record",
+            style: TextStyle(
+              fontSize: 18,
+              fontFamily: 'Poppins-Medium',
+              color: AppColors.greyText,
+            ),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildActionButtons(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildGradientButton(
-            "Save",
-            AppColors.stepsGradient,
-            _saveRecord,
-          ),
-        ),
-        const SizedBox(width: 15),
-        Expanded(
-          child: _buildGradientButton(
-            "Cancel",
-            AppColors.deleteGradient,
-            () => Navigator.pop(context),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBigHeartIcon() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 25, top: 15),
-      child: Image.asset(
-        'assets/icons/health_icon.png',
-        width: 65,
-        height: 65,
-        errorBuilder: (c, e, s) => const Icon(
-          Icons.favorite_border,
-          size: 60,
-          color: Color(0xFF2D7D9A),
-        ),
       ),
     );
   }
@@ -399,15 +316,11 @@ class _AddRecordPageState extends State<AddRecordPage> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: Container(color: Colors.white.withOpacity(0.1)),
-              ),
-            ),
-            Column(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            color: Colors.white.withOpacity(0.1),
+            child: Column(
               children: [
                 _buildDateHeader(),
                 Padding(
@@ -426,7 +339,7 @@ class _AddRecordPageState extends State<AddRecordPage> {
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -436,7 +349,7 @@ class _AddRecordPageState extends State<AddRecordPage> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: const BoxDecoration(color: Color(0xFF2D7D9A)),
+      color: const Color(0xFF2D7D9A),
       child: Center(
         child: Text(
           "Today, $_displayDate",
@@ -444,14 +357,12 @@ class _AddRecordPageState extends State<AddRecordPage> {
             color: Colors.white,
             fontSize: 16,
             fontFamily: 'Poppins-SemiBold',
-            letterSpacing: 1.2,
           ),
         ),
       ),
     );
   }
 
-  // ปุ่มกดใน Row (เพิ่ม/ลด) + TextField ตรงกลาง
   Widget _buildWaterActivity() {
     return _buildHybridInputFieldRow(
       iconPath: 'assets/icons/water2_icon.png',
@@ -461,17 +372,12 @@ class _AddRecordPageState extends State<AddRecordPage> {
       unit: "glasses",
       onDecrease: () => setState(
         () => _waterController.text =
-            "${_getValue(_waterController) > 0 ? _getValue(_waterController) - 1 : 0}",
+            "${(_getValue(_waterController) - 1).clamp(0, 12)}",
       ),
-      onIncrease: () {
-        if (_getValue(_waterController) < 12) {
-          setState(
-            () => _waterController.text = "${_getValue(_waterController) + 1}",
-          );
-        } else {
-          _showError("น้ำสูงสุด 12 แก้วต่อวัน");
-        }
-      },
+      onIncrease: () => setState(
+        () => _waterController.text =
+            "${(_getValue(_waterController) + 1).clamp(0, 12)}",
+      ),
     );
   }
 
@@ -484,17 +390,12 @@ class _AddRecordPageState extends State<AddRecordPage> {
       unit: "hours",
       onDecrease: () => setState(
         () => _sleepController.text =
-            "${_getValue(_sleepController) > 0 ? _getValue(_sleepController) - 1 : 0}",
+            "${(_getValue(_sleepController) - 1).clamp(0, 12)}",
       ),
-      onIncrease: () {
-        if (_getValue(_sleepController) < 12) {
-          setState(
-            () => _sleepController.text = "${_getValue(_sleepController) + 1}",
-          );
-        } else {
-          _showError("เวลานอนสูงสุด 12 ชั่วโมงต่อวัน");
-        }
-      },
+      onIncrease: () => setState(
+        () => _sleepController.text =
+            "${(_getValue(_sleepController) + 1).clamp(0, 12)}",
+      ),
     );
   }
 
@@ -513,16 +414,10 @@ class _AddRecordPageState extends State<AddRecordPage> {
               gradient: AppColors.moodGradient,
               shape: BoxShape.circle,
             ),
-            child: Image.asset(
-              'assets/icons/mood2_icon.png',
-              width: 22,
-              height: 22,
+            child: const Icon(
+              Icons.sentiment_satisfied_alt,
               color: Colors.white,
-              errorBuilder: (c, e, s) => const Icon(
-                Icons.sentiment_satisfied_alt,
-                color: Colors.white,
-                size: 22,
-              ),
+              size: 22,
             ),
           ),
           const SizedBox(width: 12),
@@ -534,8 +429,8 @@ class _AddRecordPageState extends State<AddRecordPage> {
           const Spacer(),
           Container(
             height: 36,
-            width: 130,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            width: 110,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: const Color(0xFFF7F7F7),
               borderRadius: BorderRadius.circular(10),
@@ -543,18 +438,14 @@ class _AddRecordPageState extends State<AddRecordPage> {
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _selectedMood,
-                icon: const Icon(
-                  Icons.keyboard_arrow_down,
-                  size: 18,
-                  color: Colors.black54,
-                ),
-                style: const TextStyle(
-                  fontFamily: 'Poppins-Medium',
-                  color: Colors.black87,
-                  fontSize: 14,
-                ),
+                isExpanded: true,
                 items: _moods
-                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                    .map(
+                      (m) => DropdownMenuItem(
+                        value: m,
+                        child: FittedBox(child: Text(m)),
+                      ),
+                    )
                     .toList(),
                 onChanged: (val) => setState(() => _selectedMood = val!),
               ),
@@ -579,7 +470,10 @@ class _AddRecordPageState extends State<AddRecordPage> {
         ),
         const SizedBox(height: 5),
         Container(
-          height: 100,
+          constraints: const BoxConstraints(
+            minHeight: 100,
+            maxHeight: 150,
+          ), // ✅ ป้องกันกล่องยืดจนล้น
           padding: const EdgeInsets.symmetric(horizontal: 15),
           decoration: BoxDecoration(
             color: const Color(0xFFF6F6F6),
@@ -588,11 +482,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
           child: TextField(
             controller: _detailController,
             maxLines: null,
-            style: const TextStyle(
-              fontFamily: 'Poppins-Medium',
-              color: Colors.black87,
-              fontSize: 14,
-            ),
             decoration: const InputDecoration(
               border: InputBorder.none,
               hintText: "...",
@@ -626,76 +515,69 @@ class _AddRecordPageState extends State<AddRecordPage> {
               gradient: gradient,
               shape: BoxShape.circle,
             ),
-            child: Image.asset(
-              iconPath,
-              width: 22,
-              height: 22,
-              color: Colors.white,
-            ),
+            child: const Icon(Icons.circle, size: 22, color: Colors.white),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           _buildGradientText(
             title,
             gradient,
-            const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 16),
+            const TextStyle(fontFamily: 'Poppins-Medium', fontSize: 14),
           ),
           const Spacer(),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: onDecrease,
-                child: const Icon(
-                  Icons.remove,
-                  size: 18,
-                  color: Colors.black54,
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 60,
-                height: 36,
-                child: TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins-Medium',
-                    color: Colors.black87,
-                    fontSize: 15,
-                  ),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: const Color(0xFFF7F7F7),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 5),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onIncrease,
-                child: const Icon(Icons.add, size: 18, color: Colors.black54),
-              ),
-            ],
+          GestureDetector(
+            onTap: onDecrease,
+            child: const Icon(Icons.remove, size: 18),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 5),
           SizedBox(
-            width: 60,
-            child: Text(
-              unit,
-              style: const TextStyle(
-                color: Colors.black87,
-                fontSize: 13,
-                fontFamily: 'Poppins-Medium',
+            width: 40,
+            height: 30,
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                contentPadding: EdgeInsets.zero,
+                border: OutlineInputBorder(),
               ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          GestureDetector(
+            onTap: onIncrease,
+            child: const Icon(Icons.add, size: 18),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 45,
+            child: FittedBox(
+              child: Text(unit, style: const TextStyle(fontSize: 12)),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildGradientButton(
+            "Save",
+            AppColors.stepsGradient,
+            _saveRecord,
+          ),
+        ),
+        const SizedBox(width: 15),
+        Expanded(
+          child: _buildGradientButton(
+            "Cancel",
+            AppColors.deleteGradient,
+            () => Navigator.pop(context),
+          ),
+        ),
+      ],
     );
   }
 
@@ -707,29 +589,29 @@ class _AddRecordPageState extends State<AddRecordPage> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 52,
+        height: 50,
         decoration: BoxDecoration(
           gradient: gradient,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: gradient.colors.last.withOpacity(0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
         ),
         child: Center(
           child: Text(
             text,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 17,
-              fontFamily: 'Poppins-SemiBold',
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildBigHeartIcon() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 20),
+      child: Icon(Icons.favorite, size: 60, color: Color(0xFF2D7D9A)),
     );
   }
 
@@ -742,16 +624,6 @@ class _AddRecordPageState extends State<AddRecordPage> {
           child: _orb(130, AppColors.primaryOrangeGradient),
         ),
         Positioned(
-          top: 80,
-          right: -50,
-          child: _orb(180, AppColors.primaryBlueGradient),
-        ),
-        Positioned(
-          bottom: 120,
-          left: -50,
-          child: _orb(180, AppColors.primaryBlueGradient),
-        ),
-        Positioned(
           bottom: -20,
           right: -30,
           child: _orb(220, AppColors.primaryOrangeGradient),
@@ -762,17 +634,11 @@ class _AddRecordPageState extends State<AddRecordPage> {
 
   Widget _orb(double size, LinearGradient gradient) {
     return Opacity(
-      opacity: 0.5,
+      opacity: 0.3,
       child: Container(
         width: size,
         height: size,
         decoration: BoxDecoration(shape: BoxShape.circle, gradient: gradient),
-        child: ClipOval(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
-            child: Container(color: Colors.transparent),
-          ),
-        ),
       ),
     );
   }

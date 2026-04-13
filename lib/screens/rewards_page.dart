@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_colors.dart';
 import '../screens/main_screen.dart';
+import 'add_record_page.dart'; // เพิ่ม import เพื่อให้ปุ่ม + ใช้งานได้
 
 class RewardItem {
   final String title;
@@ -101,11 +102,9 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
     }
   }
 
-  // ฟังก์ชันเช็คสิทธิ์ (ห้ามแลกซ้ำภายใน 60 วัน)
   Future<bool> _checkRedeemEligibility(String rewardTitle) async {
     final user = supabase.auth.currentUser;
     if (user == null) return false;
-
     final lastRedeemed = await supabase
         .from('reward_history')
         .select('redeemed_at')
@@ -113,9 +112,7 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
         .eq('reward_title', rewardTitle)
         .order('redeemed_at', ascending: false)
         .maybeSingle();
-
     if (lastRedeemed == null) return true;
-
     DateTime lastDate = DateTime.parse(lastRedeemed['redeemed_at']);
     return DateTime.now().difference(lastDate).inDays >= 60;
   }
@@ -133,7 +130,6 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
   }
 
   Future<void> _onPurchase(RewardItem reward) async {
-    // 1. เช็คแต้มเบื้องต้น
     if (_currentPoints < reward.points) {
       _showErrorDialog(
         reward,
@@ -142,12 +138,9 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
       );
       return;
     }
-
-    // 2. เช็คเงื่อนไข 2 เดือน
     setState(() => _isLoading = true);
     bool canRedeem = await _checkRedeemEligibility(reward.title);
     setState(() => _isLoading = false);
-
     if (!canRedeem) {
       _showErrorDialog(
         reward,
@@ -156,33 +149,21 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
       );
       return;
     }
-
-    // 3. ยืนยันการแลก
     final bool? confirm = await _showConfirmDialog(reward);
-
     if (confirm == true) {
       try {
         final user = supabase.auth.currentUser;
         if (user == null) return;
-
         int newPoints = _currentPoints - reward.points;
-
-        // บันทึกการหักแต้ม + ถ้าเป็น SPECIAL TITLES ให้เซฟยศด้วย
         Map<String, dynamic> userUpdates = {'points': newPoints};
-        if (reward.title == 'SPECIAL TITLES') {
+        if (reward.title == 'SPECIAL TITLES')
           userUpdates['special_title'] = 'Legendary Healthy';
-        }
-
         await supabase.from('users').update(userUpdates).eq('user_id', user.id);
-
-        // บันทึกประวัติการแลกลงตาราง reward_history
         await supabase.from('reward_history').insert({
           'user_id': user.id,
           'reward_title': reward.title,
         });
-
         setState(() => _currentPoints = newPoints);
-
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -297,12 +278,10 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 25),
                       child: Column(
                         children: List.generate(_rewards.length, (index) {
-                          final reward = _rewards[index];
-                          final isExpanded = _expandedIndex == index;
                           return _buildGlassRewardCard(
-                            reward,
+                            _rewards[index],
                             index,
-                            isExpanded,
+                            _expandedIndex == index,
                           );
                         }),
                       ),
@@ -312,7 +291,41 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
                 ),
               ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      // ✅ แก้ไขส่วน Bottom Bar ให้เหมือน MainScreen
+      bottomNavigationBar: Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            height: 85,
+            decoration: BoxDecoration(
+              color: AppColors.lightText,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(35),
+                topRight: Radius.circular(35),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem('assets/icons/home_icon.png', 'home', 0),
+                _buildNavItem('assets/icons/stat_icon.png', 'stats', 1),
+                const SizedBox(width: 60),
+                _buildNavItem('assets/icons/calendar_icon.png', 'calendar', 2),
+                _buildNavItem('assets/icons/setting_icon.png', 'settings', 3),
+              ],
+            ),
+          ),
+          Positioned(top: -25, child: _buildAddButton()),
+        ],
+      ),
     );
   }
 
@@ -566,36 +579,6 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
     );
   }
 
-  Widget _buildBottomNavigationBar() {
-    return Container(
-      height: 100,
-      decoration: BoxDecoration(
-        color: AppColors.lightText,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(35),
-          topRight: Radius.circular(35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavItem('assets/icons/home_icon.png', 'home', 0),
-          _buildNavItem('assets/icons/stat_icon.png', 'stats', 1),
-          _buildAddButton(),
-          _buildNavItem('assets/icons/calendar_icon.png', 'calendar', 2),
-          _buildNavItem('assets/icons/setting_icon.png', 'settings', 3),
-        ],
-      ),
-    );
-  }
-
   Widget _buildNavItem(String iconPath, String label, int index) {
     return GestureDetector(
       onTap: () => _navigateToIndex(index),
@@ -605,15 +588,15 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
         children: [
           Image.asset(
             iconPath,
-            width: 28,
-            height: 28,
+            width: 26,
+            height: 26,
             color: AppColors.greyText,
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: AppColors.greyText,
               fontFamily: 'Poppins',
             ),
@@ -624,23 +607,30 @@ class _RewardsShopPageState extends State<RewardsShopPage> {
   }
 
   Widget _buildAddButton() {
-    return Container(
-      width: 60,
-      height: 60,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: AppColors.primaryOrangeGradient,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryOrangeGradient.colors.first.withOpacity(
-              0.3,
-            ),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const AddRecordPage()),
       ),
-      child: const Icon(Icons.add, color: Colors.white, size: 35),
+      child: Container(
+        width: 65,
+        height: 65,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: AppColors.primaryOrangeGradient,
+          border: Border.all(color: Colors.white, width: 4),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryOrangeGradient.colors.first.withOpacity(
+                0.3,
+              ),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.add, color: Colors.white, size: 38),
+      ),
     );
   }
 }
